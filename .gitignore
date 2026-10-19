@@ -1,0 +1,33 @@
+# Keil 编译输出与个人配置
+firmware/*/MDK-ARM/*/
+!firmware/*/MDK-ARM/RTE/
+*.uvguix.*
+*.uvoptx
+*.axf
+*.hex
+*.bin
+*.map
+*.htm
+*.lnp
+*.dep
+*.o
+*.d
+*.crf
+*.lst
+*.scvd
+JLinkLog.txt
+JLinkSettings.ini
+EventRecorderStub.scvd
+
+# PC 端测试生成的程序
+/test_*
+!/tests/
+*.exe
+__pycache__/
+
+# 临时文件
+*.tar
+.vscode/
+
+# 个人学习手册（含面试准备），只留在本地，不上传
+docs/handbook/
