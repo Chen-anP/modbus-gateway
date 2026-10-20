@@ -68,7 +68,9 @@ void log_init(void)
 {
     s_queue = xQueueCreate(LOG_QUEUE_DEPTH, sizeof(log_msg_t));
     configASSERT(s_queue != NULL);
-    xTaskCreate(log_task, "log", LOG_TASK_STACK, NULL, LOG_TASK_PRIO, NULL);
+
+    if (xTaskCreate(log_task, "log", LOG_TASK_STACK, NULL, LOG_TASK_PRIO, NULL) != pdPASS)
+        configASSERT(0);
 }
 
 void log_set_level(log_level_t level)
@@ -151,5 +153,30 @@ void log_write(log_level_t level, const char *tag, const char *fmt, ...)
 void log_hex(log_level_t level, const char *tag, const char *title, const uint8_t *data, uint16_t len)
 {
     /* TODO：你来写 */
-    (void)level; (void)tag; (void)title; (void)data; (void)len;
+    char buf[LOG_LINE_MAX];
+    int n;
+    uint16_t i = 0;
+
+    if ((uint8_t)level > s_level)
+        return;
+    if (in_isr()) {
+        s_isr_rejected++;
+        return;
+    }
+
+    n = format_prefix(buf, sizeof(buf), level, tag);
+    n += snprintf(&buf[n], sizeof(buf) - 2 - (size_t)n, "%s %u bytes:", title, (unsigned)len);
+
+    for (;;) {
+        /* 本行最多再放 16 个字节 */
+        uint16_t end = (uint16_t)(((uint32_t)len - i > 16u) ? (uint32_t)i + 16u : len);
+        for (; i < end && n < (int)sizeof(buf) - 2; i++)
+            n += snprintf(&buf[n], sizeof(buf) - 2 - (size_t)n, " %02X", data[i]);
+        log_emit(buf, finish_line(buf, n));
+        if (i >= len)
+            break;
+        n = format_prefix(buf, sizeof(buf), level, tag);   /* 下一行：只有前缀，没有标题 */
+        if (n > 0 && buf[n - 1] == ' ')
+            n--;                                            /* 前缀以 ": " 结尾，字节前面自带空格，去掉一个 */
+    }
 }

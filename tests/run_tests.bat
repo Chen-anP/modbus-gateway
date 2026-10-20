@@ -15,7 +15,7 @@ if exist tests\out\test_mb_rtu.exe tests\out\test_mb_rtu.exe || set FAIL=1
 
 echo.
 echo ===== 2. log 日志模块 =====
-gcc %CF% -I tests/stubs -I %APP% %APP%/log.c tests/test_log.c -o tests/out/test_log.exe || set FAIL=1
+gcc %CF% -DTEST_LOG_HEX -I tests/stubs -I %APP% %APP%/log.c tests/test_log.c -o tests/out/test_log.exe || set FAIL=1
 if exist tests\out\test_log.exe tests\out\test_log.exe || set FAIL=1
 
 echo.

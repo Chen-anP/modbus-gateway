@@ -59,7 +59,7 @@ const osThreadAttr_t defaultTask_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-
+static void sys_task(void *arg);
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void *argument);
@@ -97,6 +97,7 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
 	log_init();
+    xTaskCreate(sys_task, "sys", 256, NULL, tskIDLE_PRIORITY + 2, NULL);
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -115,16 +116,8 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN defaultTask */
   /* Infinite loop */
-  uint32_t n = 0;
-  for(;;)
-  {
-    LOGI("sys", "alive %lu, heap free %u (min %u), stack left %lu words, log dropped %lu",
-         (unsigned long)n++,
-         (unsigned)xPortGetFreeHeapSize(), (unsigned)xPortGetMinimumEverFreeHeapSize(),
-         (unsigned long)uxTaskGetStackHighWaterMark(NULL),
-         (unsigned long)log_dropped());
-    osDelay(1000);
-  }
+    (void)argument;
+    vTaskDelete(NULL);   /* 默认任务不用了，删除自己 */
   /* USER CODE END defaultTask */
 }
 
@@ -139,6 +132,20 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
   HAL_UART_Transmit(&huart3, (uint8_t *)head, (uint16_t)strlen(head), 100);
   HAL_UART_Transmit(&huart3, (uint8_t *)pcTaskName, (uint16_t)strlen(pcTaskName), 100);
   for (;;) { }
+}
+static void sys_task(void *arg)
+{
+  uint32_t n = 0;
+  (void)arg;
+  for (;;)
+  {
+    LOGI("sys", "alive %lu, heap free %u (min %u), stack left %lu words, log dropped %lu",
+         (unsigned long)n++,
+         (unsigned)xPortGetFreeHeapSize(), (unsigned)xPortGetMinimumEverFreeHeapSize(),
+         (unsigned long)uxTaskGetStackHighWaterMark(NULL),
+         (unsigned long)log_dropped());
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
 }
 
 /* USER CODE END Application */
