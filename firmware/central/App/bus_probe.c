@@ -48,7 +48,7 @@ static int feed(mb_framer_t *f, const uint8_t *d, uint16_t n, uint8_t *rsp, uint
     return 0;
 }
 
-/* 一次请求-回应。返回回应长度（>0），0 = 超时，-1 = 发送失败 */
+/* 一次请求-回应。返回回应长度（>0），0 = 超时（会打印收到了什么），-1 = 发送失败 */
 static int transact(port_uart_t *p, const uint8_t *req, uint16_t req_len, uint8_t *rsp)
 {
     mb_framer_t f;
@@ -56,6 +56,8 @@ static int transact(port_uart_t *p, const uint8_t *req, uint16_t req_len, uint8_
     uint16_t n, rsp_len = 0;
     uint16_t echo_pos = 0;          /* 已经和请求逐字节对上的个数 */
     int echo_check = 1;             /* 还在检查"是不是回显" */
+    uint8_t raw[32];                /* 诊断用：记下这次收到的前 32 个原始字节，超时时打印 */
+    uint16_t raw_len = 0;
     TickType_t start;
 
     mb_framer_init(&f, 0, BYTE_GAP_MS);         /* 0 = 按"回应帧"格式判断长度 */
@@ -71,10 +73,12 @@ static int transact(port_uart_t *p, const uint8_t *req, uint16_t req_len, uint8_
         const uint8_t *d = chunk;
 
         if (elapsed >= pdMS_TO_TICKS(RSP_TIMEOUT_MS))
-            return 0;                           /* 超时 */
+            break;                              /* 超时 */
         n = port_uart_read(p, chunk, sizeof(chunk), RSP_TIMEOUT_MS - elapsed * portTICK_PERIOD_MS);
         if (n == 0)
-            return 0;
+            break;
+        for (uint16_t k = 0; k < n && raw_len < sizeof(raw); k++)
+            raw[raw_len++] = chunk[k];
 
         /* 有的 RS485 模块会把自己发出去的数据也收回来（回显）。
          * 收到的字节和请求逐个比较：整帧都对上 → 是回显，丢掉；
@@ -99,6 +103,18 @@ static int transact(port_uart_t *p, const uint8_t *req, uint16_t req_len, uint8_
         log_hex(LOG_LVL_DEBUG, p->name, "rx", rsp, rsp_len);
         return rsp_len;
     }
+
+    /* 超时：打印收到了什么，帮助判断问题在哪一侧
+     *   一个字节都没有 → 对方没回：没烧程序、地址不对、接线（A/B 反、没共地）、没上电
+     *   只有回显       → 我们发出去了，对方没回
+     *   有字节但不成帧 → 收到了乱码：波特率不对、A/B 接反、干扰 */
+    if (raw_len == 0)
+        LOGW(p->name, "no byte received in %u ms", (unsigned)RSP_TIMEOUT_MS);
+    else if (!echo_check && echo_pos == req_len && raw_len == req_len)
+        LOGW(p->name, "only echo received, no reply");
+    else
+        log_hex(LOG_LVL_WARN, p->name, "incomplete", raw, raw_len);
+    return 0;
 }
 
 /* 读一个传感器的输入寄存器并打印 */
@@ -140,14 +156,18 @@ static void bus_probe_task(void *arg)
     LOGI("probe", "start: ch1=USART2, ch2=UART4, 115200 8N1");
 
     for (;;) {
-        probe(&s_ch2, 3, 0, 2);     /* 温湿度：输入寄存器 0 = 温度，1 = 湿度 */
-        probe(&s_ch1, 2, 0, 2);     /* 环境监测：输入寄存器 0、1 = 两路 ADC */
+        probe(&s_ch1, 1, 0, 2);     /* 开关量：没有输入寄存器，回 exception 2 就算通 */
+        probe(&s_ch1, 2, 0, 2);     /* 环境监测：两路 ADC */
+        probe(&s_ch1, 3, 0, 2);     /* 温湿度 */
+        probe(&s_ch2, 1, 0, 2);
+        probe(&s_ch2, 2, 0, 2);
+        probe(&s_ch2, 3, 0, 2);
 
         if (++round % 10 == 0) {    /* 每 10 秒打印一次统计 */
-            LOGI("probe", "ch1 rx %lu ev %lu err %lu ovf %lu | ch2 rx %lu ev %lu err %lu ovf %lu",
-                 (unsigned long)s_ch1.rx_bytes, (unsigned long)s_ch1.rx_events,
+            LOGI("probe", "ch1 tx %lu rx %lu ev %lu err %lu ovf %lu | ch2 tx %lu rx %lu ev %lu err %lu ovf %lu",
+                 (unsigned long)s_ch1.tx_bytes, (unsigned long)s_ch1.rx_bytes, (unsigned long)s_ch1.rx_events,
                  (unsigned long)s_ch1.rx_errors, (unsigned long)s_ch1.rx_overflow,
-                 (unsigned long)s_ch2.rx_bytes, (unsigned long)s_ch2.rx_events,
+                 (unsigned long)s_ch2.tx_bytes, (unsigned long)s_ch2.rx_bytes, (unsigned long)s_ch2.rx_events,
                  (unsigned long)s_ch2.rx_errors, (unsigned long)s_ch2.rx_overflow);
         }
         vTaskDelay(pdMS_TO_TICKS(1000));

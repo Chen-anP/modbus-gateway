@@ -635,9 +635,19 @@
               <FilePath>..\App\log.c</FilePath>
             </File>
             <File>
-              <FileName>log.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\App\log.h</FilePath>
+              <FileName>bus_probe.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\bus_probe.c</FilePath>
+            </File>
+            <File>
+              <FileName>mb_rtu.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\mb_rtu.c</FilePath>
+            </File>
+            <File>
+              <FileName>port_uart.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\port_uart.c</FilePath>
             </File>
           </Files>
         </Group>
