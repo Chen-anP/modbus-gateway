@@ -34,6 +34,11 @@ gcc %CF% -I %APP% -I tests %APP%/mb_rtu.c %APP%/mb_master.c %APP%/dev_health.c %
 if exist tests\out\test_poll.exe tests\out\test_poll.exe || set FAIL=1
 
 echo.
+echo ===== 6. sys_regs 系统区寄存器 =====
+gcc %CF% -I %APP% %APP%/mb_rtu.c %APP%/sys_regs.c tests/test_sys_regs.c -o tests/out/test_sys_regs.exe || set FAIL=1
+if exist tests\out\test_sys_regs.exe tests\out\test_sys_regs.exe || set FAIL=1
+
+echo.
 if %FAIL%==0 (echo 全部通过) else (echo 有失败，往上翻看 FAIL 那一行)
 del /q tests\out\*.exe >nul 2>&1
 pause

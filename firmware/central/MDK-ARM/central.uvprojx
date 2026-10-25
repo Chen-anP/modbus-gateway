@@ -329,7 +329,7 @@
             <uC99>1</uC99>
             <uGnu>0</uGnu>
             <useXO>0</useXO>
-            <v6Lang>5</v6Lang>
+            <v6Lang>6</v6Lang>
             <v6LangP>3</v6LangP>
             <vShortEn>1</vShortEn>
             <vShortWch>1</vShortWch>
@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32H563xx</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32H5xx_HAL_Driver/Inc;../Drivers/STM32H5xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H5xx/Include;../Drivers/CMSIS/Include;../Middlewares/Third_Party/FreeRTOS/Source/include/;../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM33_NTZ/non_secure/;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/;../Middlewares/Third_Party/CMSIS/RTOS2/Include/;..\App</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32H5xx_HAL_Driver/Inc;../Drivers/STM32H5xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H5xx/Include;../Drivers/CMSIS/Include;../Middlewares/Third_Party/FreeRTOS/Source/include/;../Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM33_NTZ/non_secure/;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/;../Middlewares/Third_Party/CMSIS/RTOS2/Include/;..\App;..\Middlewares\Third_Party\tinyusb\src</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -663,6 +663,61 @@
               <FileName>poll_task.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\App\poll_task.c</FilePath>
+            </File>
+            <File>
+              <FileName>port_usb.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\port_usb.c</FilePath>
+            </File>
+            <File>
+              <FileName>sys_regs.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\sys_regs.c</FilePath>
+            </File>
+            <File>
+              <FileName>up_link.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\up_link.c</FilePath>
+            </File>
+            <File>
+              <FileName>usb_descriptors.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\usb_descriptors.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Middlewares/TinyUSB</GroupName>
+          <Files>
+            <File>
+              <FileName>tusb.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Middlewares\Third_Party\tinyusb\src\tusb.c</FilePath>
+            </File>
+            <File>
+              <FileName>cdc_device.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Middlewares\Third_Party\tinyusb\src\class\cdc\cdc_device.c</FilePath>
+            </File>
+            <File>
+              <FileName>tusb_fifo.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Middlewares\Third_Party\tinyusb\src\common\tusb_fifo.c</FilePath>
+            </File>
+            <File>
+              <FileName>usbd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Middlewares\Third_Party\tinyusb\src\device\usbd.c</FilePath>
+            </File>
+            <File>
+              <FileName>usbd_control.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Middlewares\Third_Party\tinyusb\src\device\usbd_control.c</FilePath>
+            </File>
+            <File>
+              <FileName>dcd_stm32_fsdev.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Middlewares\Third_Party\tinyusb\src\portable\st\stm32_fsdev\dcd_stm32_fsdev.c</FilePath>
             </File>
           </Files>
         </Group>
