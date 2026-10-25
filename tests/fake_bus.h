@@ -1,5 +1,5 @@
 /*
- * fake_bus.h - PC 测试用的"假总线"：实现 mb_io_t，给 test_mb_master.c 和 test_poll.c 共用
+ * fake_bus.h - PC 测试用的"假总线"：实现 mb_io_t，给 test_mb_master.c 和 test_point_sync.c 共用
  *
  * 两种用法：
  *   1. 脚本模式 fb_script()：预先排好每次 read 返回哪一段字节（测回显、分包、垃圾数据）
@@ -33,8 +33,11 @@ typedef struct {
     uint8_t  addr;
     uint8_t  online;        /* 0 = 拔掉了，不回应 */
     uint8_t  corrupt_next;  /* >0：接下来几次回应把 CRC 弄坏 */
-    uint16_t bits[8];       /* 0x / 1x */
-    uint16_t regs[8];       /* 3x / 4x */
+    uint16_t coil[8];       /* 0x 线圈 */
+    uint16_t disc[8];       /* 1x 离散输入 */
+    uint16_t input[8];      /* 3x 输入寄存器 */
+    uint16_t holding[8];    /* 4x 保持寄存器 */
+    uint32_t writes;        /* 收到几次写请求 */
     uint32_t requests;      /* 收到几次发给自己的请求 */
 } fb_slave_t;
 
@@ -46,16 +49,25 @@ static mb_ex_t sl_check(void *ctx, mb_table_t tab, uint16_t addr, uint16_t count
     (void)ctx; (void)tab; (void)is_write;
     return (addr + count <= 8) ? MB_EX_NONE : MB_EX_ILLEGAL_ADDRESS;
 }
+static uint16_t *sl_table(fb_slave_t *s, mb_table_t tab)
+{
+    switch (tab) {
+    case MB_TAB_COIL:     return s->coil;
+    case MB_TAB_DISCRETE: return s->disc;
+    case MB_TAB_INPUT:    return s->input;
+    default:              return s->holding;
+    }
+}
 static mb_ex_t sl_read(void *ctx, mb_table_t tab, uint16_t addr, uint16_t *value)
 {
-    fb_slave_t *s = (fb_slave_t *)ctx;
-    *value = (tab == MB_TAB_COIL || tab == MB_TAB_DISCRETE) ? s->bits[addr] : s->regs[addr];
+    *value = sl_table((fb_slave_t *)ctx, tab)[addr];
     return MB_EX_NONE;
 }
 static mb_ex_t sl_write(void *ctx, mb_table_t tab, uint16_t addr, uint16_t value)
 {
     fb_slave_t *s = (fb_slave_t *)ctx;
-    if (tab == MB_TAB_COIL) s->bits[addr] = value ? 1 : 0; else s->regs[addr] = value;
+    sl_table(s, tab)[addr] = (tab == MB_TAB_COIL) ? (value ? 1u : 0u) : value;
+    s->writes++;
     return MB_EX_NONE;
 }
 

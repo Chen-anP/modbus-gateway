@@ -2,7 +2,7 @@
 
 STM32H563 + FreeRTOS。上行 USB 虚拟串口做 Modbus RTU 从机，下行两路 RS485 做 Modbus RTU 主机，轮询传感器；支持点表下发和转发固件升级。
 
-> 开发中，当前进度：第 3 步（主站轮询）。完成后补充功能说明、实测数据和演示。
+> 开发中，当前进度：第 4 步（USB 虚拟串口 + Modbus 从机）。完成后补充功能说明、实测数据和演示。
 
 功能需求参考了百问网课程中"中控"的功能；本仓库的设计和代码为重新编写，不使用课程代码和 libmodbus。
 
@@ -28,6 +28,11 @@ firmware/central/       中控固件（CubeMX 生成 + Keil MDK 工程）
     dev_health.c/.h       设备在线状态：连续失败 3 次判定掉线，掉线后每 2 s 重试一次
     poll.c/.h             主站轮询：每个设备按自己的周期读，记录在线状态和最近的值
     poll_task.c/.h        两路 RS485 各一个轮询任务、设备表
+    port_usb.c/.h         USB 虚拟串口（CDC）收发，基于 TinyUSB；usbd 任务、中断交接
+    usb_descriptors.c     USB 描述符；tusb_config.h 是 TinyUSB 配置
+    sys_regs.c/.h         系统区寄存器（4x 0xF000 起）：版本、命令、每通道统计
+    up_link.c/.h          上行任务：USB 收一帧 → 从机处理 → 回一帧（中控是从机，地址 1）
+  Middlewares/Third_Party/tinyusb/   TinyUSB 0.20.0（MIT），只保留用到的部分
   Core/ Drivers/ Middlewares/   CubeMX 生成
   central.ioc           CubeMX 配置
 tests/                  PC 端单元测试
@@ -61,7 +66,8 @@ gcc -std=c99 -Wall -Wextra -I firmware/central/App firmware/central/App/mb_rtu.c
 | `test_dev_health.c` | 19 |
 | `test_mb_master.c` | 31 |
 | `test_poll.c` | 29 |
+| `test_sys_regs.c` | 24 |
 
 ## 许可
 
-`App/` 和 `tests/` 下自己编写的文件采用 MIT 许可；CubeMX 生成的文件、HAL、CMSIS、FreeRTOS 保持各自原有许可。
+`App/` 和 `tests/` 下自己编写的文件采用 MIT 许可；CubeMX 生成的文件、HAL、CMSIS、FreeRTOS、TinyUSB 保持各自原有许可。

@@ -655,11 +655,6 @@
               <FilePath>..\App\mb_master.c</FilePath>
             </File>
             <File>
-              <FileName>poll.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\App\poll.c</FilePath>
-            </File>
-            <File>
               <FileName>poll_task.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\App\poll_task.c</FilePath>
@@ -683,6 +678,31 @@
               <FileName>usb_descriptors.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\App\usb_descriptors.c</FilePath>
+            </File>
+            <File>
+              <FileName>default_points.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\default_points.c</FilePath>
+            </File>
+            <File>
+              <FileName>gw_data.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\gw_data.c</FilePath>
+            </File>
+            <File>
+              <FileName>point_sync.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\point_sync.c</FilePath>
+            </File>
+            <File>
+              <FileName>point_table.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\point_table.c</FilePath>
+            </File>
+            <File>
+              <FileName>reg_space.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\reg_space.c</FilePath>
             </File>
           </Files>
         </Group>

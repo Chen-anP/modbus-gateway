@@ -29,14 +29,24 @@ gcc %CF% -I %APP% -I tests %APP%/mb_rtu.c %APP%/mb_master.c tests/test_mb_master
 if exist tests\out\test_mb_master.exe tests\out\test_mb_master.exe || set FAIL=1
 
 echo.
-echo ===== 5. poll 主站轮询 =====
-gcc %CF% -I %APP% -I tests %APP%/mb_rtu.c %APP%/mb_master.c %APP%/dev_health.c %APP%/poll.c tests/test_poll.c -o tests/out/test_poll.exe || set FAIL=1
-if exist tests\out\test_poll.exe tests\out\test_poll.exe || set FAIL=1
-
-echo.
-echo ===== 6. sys_regs 系统区寄存器 =====
+echo ===== 5. sys_regs 系统区寄存器 =====
 gcc %CF% -I %APP% %APP%/mb_rtu.c %APP%/sys_regs.c tests/test_sys_regs.c -o tests/out/test_sys_regs.exe || set FAIL=1
 if exist tests\out\test_sys_regs.exe tests\out\test_sys_regs.exe || set FAIL=1
+
+echo.
+echo ===== 6. point_table 点表 =====
+gcc %CF% -I %APP% %APP%/point_table.c %APP%/default_points.c tests/test_point_table.c -o tests/out/test_point_table.exe || set FAIL=1
+if exist tests\out\test_point_table.exe tests\out\test_point_table.exe || set FAIL=1
+
+echo.
+echo ===== 7. reg_space 寄存器空间 =====
+gcc %CF% -I %APP% %APP%/mb_rtu.c %APP%/sys_regs.c %APP%/point_table.c %APP%/default_points.c %APP%/reg_space.c tests/test_reg_space.c -o tests/out/test_reg_space.exe || set FAIL=1
+if exist tests\out\test_reg_space.exe tests\out\test_reg_space.exe || set FAIL=1
+
+echo.
+echo ===== 8. point_sync 点同步 =====
+gcc %CF% -I %APP% -I tests %APP%/mb_rtu.c %APP%/mb_master.c %APP%/dev_health.c %APP%/sys_regs.c %APP%/point_table.c %APP%/default_points.c %APP%/reg_space.c %APP%/point_sync.c tests/test_point_sync.c -o tests/out/test_point_sync.exe || set FAIL=1
+if exist tests\out\test_point_sync.exe tests\out\test_point_sync.exe || set FAIL=1
 
 echo.
 if %FAIL%==0 (echo 全部通过) else (echo 有失败，往上翻看 FAIL 那一行)

@@ -1,12 +1,12 @@
 /*
- * poll_task.c - 第 3 步：把 poll 模块接到 FreeRTOS 和串口上
+ * poll_task.c - 把 point_sync 接到 FreeRTOS 和串口上
  *
  * 这个文件只做"接线"：
  *   1. 把 port_uart 的函数包装成 mb_io_t（mb_master 只认这组函数指针，所以 PC 上能换成模拟串口）
- *   2. 写死每个通道上有哪些设备（第 5 步换成点表）
- *   3. 每个通道一个任务：循环调用 poll_ch_step()，每 10 秒打印一次汇总
+ *   2. 每个通道一个任务：循环调用 point_sync_step()，每 10 秒打印一次汇总
+ * 每个通道读哪些设备、哪些寄存器，由点表决定（gw_data.c 加载）。
  *
- * 为什么每个通道一个任务：两条总线互不影响。ch1 上某个设备超时等 100 ms 的时候，ch2 照常轮询。
+ * 为什么每个通道一个任务：两条总线互不影响。ch1 上某个设备超时等 100 ms 的时候，ch2 照常同步。
  *
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 陈攀
@@ -16,29 +16,14 @@
 #include "usart.h"
 #include "log.h"
 #include "port_uart.h"
+#include "gw_data.h"
 #include "poll_task.h"
 
-#define RSP_TIMEOUT_MS  100u    /* 等回应最多 100 ms（实测往返 1~2 ms，留足余量） */
-#define RETRIES         2u      /* 失败后再试 2 次，一共最多 3 次 */
-#define LOOP_SLEEP_MS   50u     /* 每扫一遍睡 50 ms：周期的精度是 50 ms，也给低优先级任务留时间 */
-#define REPORT_MS       10000u  /* 汇总间隔 */
-#define POLL_STACK_WORDS 768u
-
-/* ---------------------------------------------------------------- 设备表 */
-
-/* ch1（USART2）：开关量 + 环境监测 */
-static const poll_dev_cfg_t k_ch1_devs[] = {
-    /* 名字      地址  表               起始 个数 周期 ms */
-    { "switch", 1, MB_TAB_DISCRETE, 0, 3, 200  },  /* 3 路开关量：变化要快点看到 */
-    { "env",    2, MB_TAB_INPUT,    0, 2, 500  },  /* 2 路 ADC */
-};
-
-/* ch2（UART4）：温湿度 */
-static const poll_dev_cfg_t k_ch2_devs[] = {
-    { "temp",   3, MB_TAB_INPUT,    0, 2, 2000 },  /* 温度 0.1 ℃、湿度 0.1 %：变化慢 */
-};
-
-#define NDEV(a) ((uint8_t)(sizeof(a) / sizeof((a)[0])))
+#define RSP_TIMEOUT_MS   100u   /* 等回应最多 100 ms（实测往返 1~2 ms，留足余量） */
+#define RETRIES          2u     /* 失败后再试 2 次，一共最多 3 次 */
+#define LOOP_SLEEP_MS    50u    /* 每一轮之后睡 50 ms，给低优先级任务留时间 */
+#define REPORT_MS        10000u
+#define POLL_STACK_WORDS 768u   /* 第 3 步实测用了 290 字；point_sync 多了一个 16 个值的读缓冲，余量足够 */
 
 /* ---------------------------------------------------------------- mb_io_t 适配 */
 
@@ -70,20 +55,18 @@ static void io_delay_ms(uint32_t ms)
 /* ---------------------------------------------------------------- 每个通道的全部状态 */
 
 typedef struct {
-    UART_HandleTypeDef   *huart;
-    const poll_dev_cfg_t *cfgs;
-    uint8_t               ndev;
-    port_uart_t           port;
-    mb_io_t               io;
-    mb_master_t           mb;
-    poll_dev_t            devs[4];
-    poll_ch_t             poll;
-    uint8_t               ready;
+    uint8_t             ch;         /* 1、2 */
+    UART_HandleTypeDef *huart;
+    port_uart_t         port;
+    mb_io_t             io;
+    mb_master_t         mb;
+    point_sync_t        ps;
+    uint8_t             ready;
 } channel_t;
 
 static channel_t s_ch[2] = {
-    { .huart = &huart2, .cfgs = k_ch1_devs, .ndev = NDEV(k_ch1_devs), .io = { .name = "ch1" } },
-    { .huart = &huart4, .cfgs = k_ch2_devs, .ndev = NDEV(k_ch2_devs), .io = { .name = "ch2" } },
+    { .ch = 1, .huart = &huart2, .io = { .name = "ch1" } },
+    { .ch = 2, .huart = &huart4, .io = { .name = "ch2" } },
 };
 
 static void poll_task(void *arg)
@@ -98,30 +81,28 @@ static void poll_task(void *arg)
     c->io.now_ms   = io_now_ms;
     c->io.delay_ms = io_delay_ms;
 
-    if (c->ndev > sizeof(c->devs) / sizeof(c->devs[0])
-        || port_uart_init(&c->port, c->huart, c->io.name) != 0) {
-        LOGE(c->io.name, "init failed");
+    if (port_uart_init(&c->port, c->huart, c->io.name) != 0) {
+        LOGE(c->io.name, "port init failed");
         vTaskDelete(NULL);
         return;
     }
     mb_master_init(&c->mb, &c->io, RSP_TIMEOUT_MS, RETRIES);
-    c->mb.echo = MB_ECHO_NONE;      /* 中控的收发器不回显（实测见 docs/debug-log.md），见 mb_master.h */
-    if (poll_ch_init(&c->poll, &c->mb, c->devs, c->cfgs, c->ndev) != 0) {
-        LOGE(c->io.name, "bad device table");
+    c->mb.echo = MB_ECHO_NONE;      /* 中控的收发器不回显（实测见 docs/debug-log.md） */
+    if (point_sync_init(&c->ps, c->ch, &c->mb, gw_rs(), gw_points()) != 0) {
+        LOGE(c->io.name, "too many devices in point table");
         vTaskDelete(NULL);
         return;
     }
     c->ready = 1;
-    LOGI(c->io.name, "poll start: %u device(s), timeout %u ms, retries %u",
-         (unsigned)c->ndev, (unsigned)RSP_TIMEOUT_MS, (unsigned)RETRIES);
+    LOGI(c->io.name, "sync start: %u device(s)", (unsigned)c->ps.ndev);
 
     next_report = io_now_ms() + REPORT_MS;
     for (;;) {
-        poll_ch_step(&c->poll);
+        point_sync_step(&c->ps);
 
         if ((int32_t)(io_now_ms() - next_report) >= 0) {
             next_report += REPORT_MS;
-            poll_ch_report(&c->poll);
+            point_sync_report(&c->ps);
             LOGI(c->io.name, "port tx %lu rx %lu ev %lu err %lu ovf %lu | stack left %lu words",
                  (unsigned long)c->port.tx_bytes, (unsigned long)c->port.rx_bytes,
                  (unsigned long)c->port.rx_events, (unsigned long)c->port.rx_errors,
@@ -134,18 +115,18 @@ static void poll_task(void *arg)
 
 void poll_start(void)
 {
-    /* 栈 768 字（3 KB）。估算：mb_master_request 的回应缓冲 256 B + transact_once 里帧组装器约 270 B、
-     * chunk/raw 96 B + poll_one 约 100 B + log_write 的行缓冲和 vsnprintf，合计 1.5 KB 左右，留一倍余量。
-     * 上板后用 uxTaskGetStackHighWaterMark() 看实际剩多少（第 3 步笔记里的实测表） */
-    BaseType_t r1 = xTaskCreate(poll_task, "ch1", POLL_STACK_WORDS, &s_ch[0], tskIDLE_PRIORITY + 3, NULL);
-    BaseType_t r2 = xTaskCreate(poll_task, "ch2", POLL_STACK_WORDS, &s_ch[1], tskIDLE_PRIORITY + 3, NULL);
+    BaseType_t r1, r2;
 
+    gw_data_init();
+    r1 = xTaskCreate(poll_task, "ch1", POLL_STACK_WORDS, &s_ch[0], tskIDLE_PRIORITY + 3, NULL);
+    r2 = xTaskCreate(poll_task, "ch2", POLL_STACK_WORDS, &s_ch[1], tskIDLE_PRIORITY + 3, NULL);
     configASSERT(r1 == pdPASS && r2 == pdPASS);
+    (void)r1; (void)r2;
 }
 
-const poll_ch_t *poll_get(uint8_t ch)
+const point_sync_t *poll_get(uint8_t ch)
 {
     if (ch >= 2 || !s_ch[ch].ready)
         return NULL;
-    return &s_ch[ch].poll;
+    return &s_ch[ch].ps;
 }

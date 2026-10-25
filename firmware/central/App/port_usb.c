@@ -129,9 +129,11 @@ void tud_umount_cb(void)
 
 void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 {
-    (void)itf; (void)rts;
+    (void)itf;
     s_st.dtr = dtr ? 1u : 0u;
-    LOGI("usb", "port %s on PC (DTR %u)", dtr ? "opened" : "closed", (unsigned)dtr);
+    /* DTR = 1 一般表示电脑上有程序打开了这个串口。注意：Windows 驱动在枚举完成时会先发一次 DTR = 0，
+     * 那时没有程序打开过，所以不能理解成"关闭了" */
+    LOGI("usb", "line state: DTR %u RTS %u", (unsigned)dtr, (unsigned)rts);
 }
 
 void tud_cdc_rx_cb(uint8_t itf)

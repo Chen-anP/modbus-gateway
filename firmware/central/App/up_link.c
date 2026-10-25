@@ -5,7 +5,8 @@
  * 按功能码和长度字段算出整帧多长，收够就是一帧；两个字节间隔超过 50 ms 丢弃半帧
  * （USB 包之间的间隔比 RS485 的字节间隔大得多，所以比下行的 5 ms 宽松）。
  *
- * 第 4 步只有系统区（sys_regs.c）；第 5 步加上点表映射区。
+ * 第 4 步只有系统区（sys_regs.c）；第 5 步起是整个寄存器空间（reg_space.c：点表映射区 + 系统区）。
+ * mb_slave_handle() 整个包在寄存器空间的锁里：读写回调访问的数据 ch 任务也在改。锁里没有收发，很快。
  *
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 陈攀
@@ -16,7 +17,7 @@
 #include "log.h"
 #include "mb_rtu.h"
 #include "port_usb.h"
-#include "poll_task.h"
+#include "gw_data.h"
 #include "sys_regs.h"
 #include "version.h"
 #include "up_link.h"
@@ -27,27 +28,8 @@
 #define UP_STACK_WORDS      512u                    /* 2 KB：帧组装器约 270 B + 回应缓冲 256 B + 日志 */
 #define UP_PRIORITY         (tskIDLE_PRIORITY + 4)  /* 比轮询任务高：上位机的请求要及时回应 */
 
-static sys_regs_t     s_sys;
 static mb_slave_ops_t s_ops;
 static uint32_t       s_frames, s_replies, s_exceptions, s_write_fail;
-
-/* 系统区要的通道统计：从轮询模块取。
- * 这里是另一个任务在读 ch 任务的计数：32 位对齐的读写在 M33 上是一条指令，不会读到"半个数"；
- * 几个数之间可能差一次轮询，统计用途可以接受。第 5 步共享点表数据时再用互斥锁 */
-static void get_ch_stat(uint8_t ch, sys_ch_stat_t *out)
-{
-    const poll_ch_t *p = poll_get((uint8_t)(ch - 1u));
-
-    if (p == NULL)
-        return;
-    out->ok         = p->mb->st.ok;
-    out->timeouts   = p->mb->st.timeouts;
-    out->crc_errors = p->mb->st.crc_errors;
-    out->offline    = 0;
-    for (uint8_t i = 0; i < p->ndev; i++)
-        if (p->devs[i].health.state == DEV_OFFLINE)
-            out->offline++;
-}
 
 /* 处理一帧完整的请求 */
 static void handle_frame(const uint8_t *req, uint16_t len)
@@ -57,7 +39,9 @@ static void handle_frame(const uint8_t *req, uint16_t len)
 
     s_frames++;
     log_hex(LOG_LVL_DEBUG, "up", "rx", req, len);
+    gw_lock();
     rsp_len = mb_slave_handle(UP_SLAVE_ADDR, &s_ops, req, len, rsp);
+    gw_unlock();
     if (rsp_len == 0)
         return;                                     /* CRC 错、不是发给我的、广播：不回应 */
     if (rsp[1] & 0x80u) {
@@ -76,7 +60,12 @@ static void handle_frame(const uint8_t *req, uint16_t len)
 /* 回应发出去以后再执行命令 */
 static void run_pending_cmd(void)
 {
-    if (sys_regs_take_cmd(&s_sys) == SYS_CMD_REBOOT) {
+    uint16_t cmd;
+
+    gw_lock();
+    cmd = sys_regs_take_cmd(gw_sys());
+    gw_unlock();
+    if (cmd == SYS_CMD_REBOOT) {
         LOGW("up", "reboot by command");
         vTaskDelay(pdMS_TO_TICKS(100));             /* 等 USB 把回应送到电脑、日志打完 */
         NVIC_SystemReset();
@@ -113,9 +102,10 @@ static void up_link_task(void *arg)
             next_report = now + UP_REPORT_MS;
             if (s_frames != last_frames) {
                 const port_usb_stats_t *u = port_usb_stats();
-                LOGI("up", "frames %lu replies %lu ex %lu wfail %lu | usb rx %lu tx %lu",
+                LOGI("up", "frames %lu replies %lu ex %lu wfail %lu | point writes %lu | usb rx %lu tx %lu",
                      (unsigned long)s_frames, (unsigned long)s_replies, (unsigned long)s_exceptions,
-                     (unsigned long)s_write_fail, (unsigned long)u->rx_bytes, (unsigned long)u->tx_bytes);
+                     (unsigned long)s_write_fail, (unsigned long)gw_rs()->writes,
+                     (unsigned long)u->rx_bytes, (unsigned long)u->tx_bytes);
                 last_frames = s_frames;
             }
         }
@@ -127,8 +117,8 @@ void up_link_start(void)
     BaseType_t r;
     int usb_ok;
 
-    sys_regs_init(&s_sys, FW_VERSION, get_ch_stat);
-    sys_regs_ops(&s_sys, &s_ops);
+    gw_data_init();                                 /* 已经由 poll_start 做过的话，这里什么都不做 */
+    reg_space_ops(gw_rs(), &s_ops);
     usb_ok = port_usb_init();                       /* 不能直接写在 configASSERT() 里：断言关掉时整句会被删掉 */
     configASSERT(usb_ok == 0);
     (void)usb_ok;

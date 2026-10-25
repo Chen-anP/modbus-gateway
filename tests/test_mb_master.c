@@ -49,7 +49,7 @@ int main(void)
     /* ---- 第 3 步：接模拟从机 ---- */
     fb_reset();
     fb_slave_t *s3 = fb_add_slave(3);
-    s3->regs[0] = 266; s3->regs[1] = 455;
+    s3->input[0] = 266; s3->input[1] = 455;
     mb_master_init(&m, &g_io, 100, 2);              /* 正式参数：超时 100 ms，重试 2 次 */
 
     /* 8. 正常读 */
@@ -87,14 +87,14 @@ int main(void)
      *     第 2 步的回显检查会把这种回应吃掉，返回超时） */
     {
         uint32_t t0 = g_now;
-        CHECK(mb_master_write_single(&m, 3, MB_TAB_HOLDING, 1, 0x1234, &ex) == MB_OK && s3->regs[1] == 0x1234);
+        CHECK(mb_master_write_single(&m, 3, MB_TAB_HOLDING, 1, 0x1234, &ex) == MB_OK && s3->holding[1] == 0x1234);
         CHECK(g_now - t0 >= 100);
     }
     /* 14b. NONE 模式（中控板实测不回显）：马上就成功 */
     {
         uint32_t t0 = g_now;
         m.echo = MB_ECHO_NONE;
-        CHECK(mb_master_write_single(&m, 3, MB_TAB_HOLDING, 1, 0x4321, &ex) == MB_OK && s3->regs[1] == 0x4321);
+        CHECK(mb_master_write_single(&m, 3, MB_TAB_HOLDING, 1, 0x4321, &ex) == MB_OK && s3->holding[1] == 0x4321);
         CHECK(g_now - t0 < 10);
         CHECK(mb_master_read(&m, 3, MB_TAB_INPUT, 0, 2, v, 8, &ex) == MB_OK && v[0] == 266);
     }
@@ -102,7 +102,7 @@ int main(void)
     {
         uint32_t t0 = g_now;
         m.echo = MB_ECHO_ALWAYS; g_echo = 1;
-        CHECK(mb_master_write_single(&m, 3, MB_TAB_HOLDING, 1, 0x5555, &ex) == MB_OK && s3->regs[1] == 0x5555);
+        CHECK(mb_master_write_single(&m, 3, MB_TAB_HOLDING, 1, 0x5555, &ex) == MB_OK && s3->holding[1] == 0x5555);
         CHECK(g_now - t0 < 10);
         /* 从机拔掉：只收到回显，不能当成功 */
         s3->online = 0;
@@ -113,11 +113,11 @@ int main(void)
     /* 15. 广播写：从机执行但不回应，不等超时、不重试 */
     sends = g_sends; g_wait_ms = 0;
     CHECK(mb_master_write_single(&m, 0, MB_TAB_HOLDING, 0, 77, &ex) == MB_OK);
-    CHECK(s3->regs[0] == 77 && g_sends == sends + 1 && g_wait_ms == 0);
+    CHECK(s3->holding[0] == 77 && g_sends == sends + 1 && g_wait_ms == 0);
 
     /* 16. 发送失败（DMA 超时）：计 send_errors，会重试 */
     g_send_fail = 1;
-    s3->regs[0] = 266;
+    s3->input[0] = 266;
     CHECK(mb_master_read(&m, 3, MB_TAB_INPUT, 0, 2, v, 8, &ex) == MB_OK && m.st.send_errors == 1);
 
     /* 17. 参数非法：个数超过结果数组 */
