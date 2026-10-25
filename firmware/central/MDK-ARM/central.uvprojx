@@ -635,11 +635,6 @@
               <FilePath>..\App\log.c</FilePath>
             </File>
             <File>
-              <FileName>bus_probe.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\App\bus_probe.c</FilePath>
-            </File>
-            <File>
               <FileName>mb_rtu.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\App\mb_rtu.c</FilePath>
@@ -648,6 +643,26 @@
               <FileName>port_uart.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\App\port_uart.c</FilePath>
+            </File>
+            <File>
+              <FileName>dev_health.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\dev_health.c</FilePath>
+            </File>
+            <File>
+              <FileName>mb_master.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\mb_master.c</FilePath>
+            </File>
+            <File>
+              <FileName>poll.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\poll.c</FilePath>
+            </File>
+            <File>
+              <FileName>poll_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\poll_task.c</FilePath>
             </File>
           </Files>
         </Group>

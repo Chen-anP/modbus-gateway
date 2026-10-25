@@ -27,8 +27,7 @@
 #include <string.h>
 #include "usart.h"
 #include "log.h"
-#include "bus_probe.h"
-
+#include "poll_task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -99,8 +98,8 @@ void MX_FREERTOS_Init(void) {
   /* add threads, ... */
 	log_init();
   //xTaskCreate(sys_task, "sys", 256, NULL, tskIDLE_PRIORITY + 2, NULL);
-  log_set_level(LOG_LVL_DEBUG);   /* 第 2 步调试用：打印收发的原始字节。调好后删掉这行 */
-  bus_probe_start();
+  //log_set_level(LOG_LVL_DEBUG);   /* 第 2 步调试用：打印收发的原始字节。调好后删掉这行 */
+  poll_start();
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */

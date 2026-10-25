@@ -19,9 +19,19 @@ gcc %CF% -DTEST_LOG_HEX -I tests/stubs -I %APP% %APP%/log.c tests/test_log.c -o 
 if exist tests\out\test_log.exe tests\out\test_log.exe || set FAIL=1
 
 echo.
-echo ===== 3. bus_probe 请求-回应 =====
-gcc %CF% -I tests/stubs -I %APP% %APP%/mb_rtu.c tests/test_bus_probe.c -o tests/out/test_bus_probe.exe || set FAIL=1
-if exist tests\out\test_bus_probe.exe tests\out\test_bus_probe.exe || set FAIL=1
+echo ===== 3. dev_health 在线状态 =====
+gcc %CF% -I %APP% %APP%/dev_health.c tests/test_dev_health.c -o tests/out/test_dev_health.exe || set FAIL=1
+if exist tests\out\test_dev_health.exe tests\out\test_dev_health.exe || set FAIL=1
+
+echo.
+echo ===== 4. mb_master 请求层 =====
+gcc %CF% -I %APP% -I tests %APP%/mb_rtu.c %APP%/mb_master.c tests/test_mb_master.c -o tests/out/test_mb_master.exe || set FAIL=1
+if exist tests\out\test_mb_master.exe tests\out\test_mb_master.exe || set FAIL=1
+
+echo.
+echo ===== 5. poll 主站轮询 =====
+gcc %CF% -I %APP% -I tests %APP%/mb_rtu.c %APP%/mb_master.c %APP%/dev_health.c %APP%/poll.c tests/test_poll.c -o tests/out/test_poll.exe || set FAIL=1
+if exist tests\out\test_poll.exe tests\out\test_poll.exe || set FAIL=1
 
 echo.
 if %FAIL%==0 (echo 全部通过) else (echo 有失败，往上翻看 FAIL 那一行)
