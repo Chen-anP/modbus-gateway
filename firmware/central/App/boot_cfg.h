@@ -56,6 +56,10 @@ int boot_cfg_read(const flash_io_t *io, uint32_t addr, boot_cfg_t *out);
 /* 写配置区：补上魔数和 self_crc，擦扇区，写 32 字节。成功 0 */
 int boot_cfg_write(const flash_io_t *io, uint32_t addr, boot_cfg_t *cfg);
 
+/* 向量表的头两项（初始栈指针、复位入口）是否合理。Bootloader 收到新固件、写 Flash 之前也用它检查 */
+int boot_vectors_ok(uint32_t sp, uint32_t reset, uint32_t app_addr, uint32_t app_len,
+                    uint32_t ram_start, uint32_t ram_end);
+
 /* App 开头的向量表是否合理：初始栈指针在 RAM 里、8 字节对齐；复位入口是 Thumb 地址（最低位 1）且在 App 里面 */
 int boot_app_vectors_ok(const flash_io_t *io, uint32_t app_addr, uint32_t app_len,
                         uint32_t ram_start, uint32_t ram_end);

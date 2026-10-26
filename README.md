@@ -2,7 +2,7 @@
 
 STM32H563 + FreeRTOS。上行 USB 虚拟串口做 Modbus RTU 从机，下行两路 RS485 做 Modbus RTU 主机，轮询传感器；支持点表下发和转发固件升级。
 
-> 开发中，当前进度：第 7a 步（Flash 擦写、点表掉电保存、Bootloader 配置区）。完成后补充功能说明、实测数据和演示。
+> 开发中，当前进度：第 7b 步（Bootloader、通过 USB 升级中控自己）。完成后补充功能说明、实测数据和演示。
 
 功能需求参考了百问网课程中"中控"的功能；本仓库的设计和代码为重新编写，不使用课程代码和 libmodbus。
 
@@ -19,7 +19,11 @@ STM32H563 + FreeRTOS。上行 USB 虚拟串口做 Modbus RTU 从机，下行两�
 ## 目录
 
 ```
-firmware/central/       中控固件（CubeMX 生成 + Keil MDK 工程）
+firmware/boot/          Bootloader（0x08000000，256 KB，Keil 工程 MDK-ARM/boot.uvprojx）：
+                          开机判断跳不跳 App；留下时通过 USB 收新固件写进 App 区。共用 central 的 HAL、TinyUSB 和 App/ 里的协议模块
+  App/                    app_flash.c（新固件写进 App 区，断电安全）、boot_proto.c（Bootloader 的系统区和 0x15）
+  Core/                   boot_main.c（判断、跳转、主循环）、boot_usb.c（裸机 TinyUSB）、boot_log.c、boot_it.c
+firmware/central/       中控固件（App，0x08040000；CubeMX 生成 + Keil MDK 工程）
   App/                  自己写的模块
     log.c/.h              带等级的日志：队列 + 低优先级任务，中断里不打印
     mb_rtu.c/.h           Modbus RTU 协议层：CRC、按功能码判断帧长、从机处理、主机组帧与解析
@@ -46,7 +50,7 @@ firmware/central/       中控固件（CubeMX 生成 + Keil MDK 工程）
   Middlewares/Third_Party/tinyusb/   TinyUSB 0.20.0（MIT），只保留用到的部分
   Core/ Drivers/ Middlewares/   CubeMX 生成
   central.ioc           CubeMX 配置
-tools/                  上位机工具 gw_tool.py（pyserial）：读写寄存器、下发 CSV 点表、系统命令
+tools/                  上位机工具 gw_tool.py（pyserial）：读写寄存器、下发 CSV 点表、系统命令、升级中控（upgrade）
 tests/                  PC 端单元测试
   run_tests.bat         Windows 一键编译运行（需要 gcc）
   stubs/                FreeRTOS / HAL 的替身头文件
@@ -55,9 +59,18 @@ tests/                  PC 端单元测试
 docs/                   调试记录 debug-log.md；设计文档、测试报告（陆续补充）
 ```
 
-## 编译
+## 编译和下载
 
-Keil MDK 5（AC6）打开 `firmware/central/MDK-ARM/central.uvprojx`，F7 编译。
+Keil MDK 5（AC6）：
+
+1. `firmware/boot/MDK-ARM/boot.uvprojx`：F7、F8（Bootloader，只需要烧一次）
+2. `firmware/central/MDK-ARM/central.uvprojx`：F7、F8（App）。编译后生成 `MDK-ARM/central/central.bin`
+
+之后可以不用调试器，通过 USB 升级 App：
+
+```
+python tools/gw_tool.py COM9 upgrade firmware/central/MDK-ARM/central/central.bin
+```
 
 ## 测试
 
@@ -86,6 +99,8 @@ gcc -std=c99 -Wall -Wextra -I firmware/central/App firmware/central/App/mb_rtu.c
 | `test_table_loader.c` | 23 |
 | `test_pt_store.c` | 31（含每一步断电） |
 | `test_boot_cfg.c` | 33 |
+| `test_app_flash.c` | 24（每一次 Flash 操作前断电） |
+| `test_boot_proto.c` | 31（真实请求帧走完整升级） |
 
 ## 许可
 

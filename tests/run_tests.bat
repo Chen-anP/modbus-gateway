@@ -6,6 +6,7 @@ cd /d "%~dp0.."
 if not exist tests\out mkdir tests\out
 set CF=-std=c99 -Wall -Wextra -D__USE_MINGW_ANSI_STDIO=1
 set APP=firmware/central/App
+set BOOT=firmware/boot/App
 set FAIL=0
 
 echo.
@@ -67,6 +68,16 @@ echo.
 echo ===== 12. boot_cfg 配置区和开机判断 =====
 gcc %CF% -I %APP% -I tests %APP%/crc32.c %APP%/boot_cfg.c tests/test_boot_cfg.c -o tests/out/test_boot_cfg.exe || set FAIL=1
 if exist tests\out\test_boot_cfg.exe tests\out\test_boot_cfg.exe || set FAIL=1
+
+echo.
+echo ===== 13. app_flash Bootloader 写新固件（含每一步断电） =====
+gcc %CF% -I %APP% -I %BOOT% -I tests %APP%/crc32.c %APP%/boot_cfg.c %BOOT%/app_flash.c tests/test_app_flash.c -o tests/out/test_app_flash.exe || set FAIL=1
+if exist tests\out\test_app_flash.exe tests\out\test_app_flash.exe || set FAIL=1
+
+echo.
+echo ===== 14. boot_proto Bootloader 的 Modbus 从机（完整升级流程） =====
+gcc %CF% -I %APP% -I %BOOT% -I tests %APP%/mb_rtu.c %APP%/crc32.c %APP%/file_rx.c %APP%/boot_cfg.c %BOOT%/app_flash.c %BOOT%/boot_proto.c tests/test_boot_proto.c -o tests/out/test_boot_proto.exe || set FAIL=1
+if exist tests\out\test_boot_proto.exe tests\out\test_boot_proto.exe || set FAIL=1
 
 echo.
 if %FAIL%==0 (echo 全部通过) else (echo 有失败，往上翻看 FAIL 那一行)

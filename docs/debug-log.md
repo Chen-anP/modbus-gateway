@@ -286,3 +286,35 @@ mb_master: 23 passed, 1 failed
 
 （待写）
 
+
+## 9. 烧完 Bootloader 串口没有任何输出
+
+**日期：**10/26（第 7b 步）
+
+**现象：**Bootloader 编译、下载都成功，日志串口（USART3）一个字都没有，设备管理器里 COM9 也不在。
+
+**排查：**
+
+| 步骤 | 做法 | 结果 |
+| --- | --- | --- |
+| ① 看 App 区 | Keil 调试，Memory 窗口看 0x08040000 | 不是 `FF`：`18 04 00 20 19 03 04 08 …`，即栈指针 0x20000418、复位入口 0x08040319 |
+| ② 看配置区 | Memory 窗口看 0x081FE000 | `46 43 57 47`（'GWCF'）、app_len 0、stay 0：7a 写的 |
+| ③ 看判断结果 | 在 `if (d == BOOT_JUMP …` 打断点 | `d = BOOT_JUMP_NO_CFG` |
+
+**原因：**0x08040000 留着这块板子以前烧过的别的程序。7a 的配置区里 app_len = 0（"没有 App 信息"），Bootloader 就只检查向量表：栈指针在 RAM 里、复位入口是 App 区里的奇数地址——看起来像一个合法的 App，于是**在初始化串口之前就跳了过去**。那个旧程序不往 USART3 打日志、也不开 USB，所以什么都看不到。
+
+Bootloader 的设计没有错：没有配置、向量表合理就跳（BOOT_JUMP_NO_CFG）是为了用 Keil 直接下载 App 时方便。它的前提是"App 区里只有我们自己下载的 App"，开发板上留着的旧程序打破了这个前提。
+
+**解决：**
+
+1. Keil → Flash → Erase，擦掉整片 Flash（点表区、配置区也一起擦了，点表回到内置默认表）
+2. 重新烧 Bootloader，这次应该留下：`stay: no app`
+3. 代码改进：跳之前在日志串口打一行 `[boot] jump to app (no config, crc not checked)`。用寄存器直接发、发完把 USART3 和 GPIOC 复位，不影响 App。以后串口上能直接看出"Bootloader 跳了"
+
+**状态：**已解决（10/26）。用 Flash Download 的 Erase Full Chip 下载一次后，Bootloader 留下（`stay: no app`），之后烧 App、升级都正常。Keil 菜单 Flash → Erase 那一次为什么没擦掉 0x08040000，没有确认。
+
+### 我学到了什么
+
+<!-- 用自己的话写 -->
+
+（待写）

@@ -19,7 +19,9 @@
 #include "flash_io.h"
 
 #define FF_SECTOR   0x2000u
-#define FF_MAX      0x10000u            /* 64 KB 够用了 */
+#ifndef FF_MAX
+#define FF_MAX      0x10000u            /* 默认 64 KB；测试可以在 include 之前改 */
+#endif
 
 static uint8_t  ff_mem[FF_MAX];
 static uint32_t ff_base;                /* ff_mem[0] 对应的地址 */
@@ -27,7 +29,7 @@ static uint32_t ff_size;
 static long     ff_power_budget = -1;   /* -1 = 不限 */
 static unsigned ff_erases, ff_writes, ff_double_write, ff_bad_args;
 
-static void ff_init(uint32_t base, uint32_t size)
+static inline void ff_init(uint32_t base, uint32_t size)
 {
     ff_base = base;
     ff_size = size;
@@ -36,9 +38,9 @@ static void ff_init(uint32_t base, uint32_t size)
     ff_erases = ff_writes = ff_double_write = ff_bad_args = 0;
 }
 
-static void ff_power_on(void) { ff_power_budget = -1; }
+static inline void ff_power_on(void) { ff_power_budget = -1; }
 
-static int ff_use_power(void)
+static inline int ff_use_power(void)
 {
     if (ff_power_budget == 0)
         return 0;
@@ -47,7 +49,7 @@ static int ff_use_power(void)
     return 1;
 }
 
-static int ff_erase(uint32_t addr)
+static inline int ff_erase(uint32_t addr)
 {
     if (addr < ff_base || addr - ff_base >= ff_size || (addr - ff_base) % FF_SECTOR != 0) {
         ff_bad_args++;
@@ -60,7 +62,7 @@ static int ff_erase(uint32_t addr)
     return 0;
 }
 
-static int ff_write(uint32_t addr, const uint8_t *d, uint32_t len)
+static inline int ff_write(uint32_t addr, const uint8_t *d, uint32_t len)
 {
     uint32_t off;
 
@@ -84,7 +86,7 @@ static int ff_write(uint32_t addr, const uint8_t *d, uint32_t len)
     return 0;
 }
 
-static const uint8_t *ff_ptr(uint32_t addr) { return &ff_mem[addr - ff_base]; }
+static inline const uint8_t *ff_ptr(uint32_t addr) { return &ff_mem[addr - ff_base]; }
 
 static const flash_io_t ff_io = { ff_erase, ff_write, ff_ptr };
 

@@ -28,6 +28,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "log.h"
+#include "flash_layout.h"
 
 /* USER CODE END Includes */
 
@@ -73,7 +74,9 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+  /* 第 7b 步：App 在 0x08040000，中断向量表也在那里。Bootloader 跳过来之前已经设过，
+     这里再设一次：用调试器单独调 App 时也不会出错 */
+  SCB->VTOR = FL_APP_ADDR;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/

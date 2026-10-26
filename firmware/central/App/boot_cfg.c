@@ -56,12 +56,9 @@ int boot_cfg_write(const flash_io_t *io, uint32_t addr, boot_cfg_t *cfg)
     return io->write(addr, b, BOOT_CFG_SIZE);
 }
 
-int boot_app_vectors_ok(const flash_io_t *io, uint32_t app_addr, uint32_t app_len,
-                        uint32_t ram_start, uint32_t ram_end)
+int boot_vectors_ok(uint32_t sp, uint32_t reset, uint32_t app_addr, uint32_t app_len,
+                    uint32_t ram_start, uint32_t ram_end)
 {
-    const uint8_t *v = io->ptr(app_addr);
-    uint32_t sp = rd32(&v[0]), reset = rd32(&v[4]);
-
     if (sp < ram_start || sp > ram_end || (sp & 7u) != 0)   /* 栈从高往低长，初始值可以正好等于 RAM 末尾 */
         return 0;
     if ((reset & 1u) == 0)                                  /* Cortex-M 只有 Thumb 状态，入口地址最低位必须是 1 */
@@ -70,6 +67,13 @@ int boot_app_vectors_ok(const flash_io_t *io, uint32_t app_addr, uint32_t app_le
     if (reset < app_addr + 8u || reset >= app_addr + app_len)
         return 0;
     return 1;
+}
+
+int boot_app_vectors_ok(const flash_io_t *io, uint32_t app_addr, uint32_t app_len,
+                        uint32_t ram_start, uint32_t ram_end)
+{
+    const uint8_t *v = io->ptr(app_addr);
+    return boot_vectors_ok(rd32(&v[0]), rd32(&v[4]), app_addr, app_len, ram_start, ram_end);
 }
 
 boot_decision_t boot_cfg_decide(const flash_io_t *io, const boot_cfg_t *cfg, uint32_t app_addr, uint32_t app_max,
