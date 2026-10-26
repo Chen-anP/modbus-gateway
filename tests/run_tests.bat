@@ -59,6 +59,16 @@ gcc %CF% -I %APP% %APP%/mb_rtu.c %APP%/crc32.c %APP%/file_rx.c %APP%/point_table
 if exist tests\out\test_table_loader.exe tests\out\test_table_loader.exe || set FAIL=1
 
 echo.
+echo ===== 11. pt_store 点表存 Flash（含模拟断电） =====
+gcc %CF% -I %APP% -I tests %APP%/crc32.c %APP%/pt_store.c tests/test_pt_store.c -o tests/out/test_pt_store.exe || set FAIL=1
+if exist tests\out\test_pt_store.exe tests\out\test_pt_store.exe || set FAIL=1
+
+echo.
+echo ===== 12. boot_cfg 配置区和开机判断 =====
+gcc %CF% -I %APP% -I tests %APP%/crc32.c %APP%/boot_cfg.c tests/test_boot_cfg.c -o tests/out/test_boot_cfg.exe || set FAIL=1
+if exist tests\out\test_boot_cfg.exe tests\out\test_boot_cfg.exe || set FAIL=1
+
+echo.
 if %FAIL%==0 (echo 全部通过) else (echo 有失败，往上翻看 FAIL 那一行)
 del /q tests\out\*.exe >nul 2>&1
 pause

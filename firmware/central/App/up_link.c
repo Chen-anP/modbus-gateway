@@ -59,6 +59,12 @@ static void handle_frame(const uint8_t *req, uint16_t len)
 }
 
 /* 回应发出去以后再执行命令 */
+static void reboot_now(void)
+{
+    vTaskDelay(pdMS_TO_TICKS(100));                 /* 等 USB 把回应送到电脑、日志打完 */
+    NVIC_SystemReset();
+}
+
 static void run_pending_cmd(void)
 {
     uint16_t cmd;
@@ -66,10 +72,27 @@ static void run_pending_cmd(void)
     gw_lock();
     cmd = sys_regs_take_cmd(gw_sys());
     gw_unlock();
-    if (cmd == SYS_CMD_REBOOT) {
+
+    switch (cmd) {
+    case SYS_CMD_REBOOT:
         LOGW("up", "reboot by command");
-        vTaskDelay(pdMS_TO_TICKS(100));             /* 等 USB 把回应送到电脑、日志打完 */
-        NVIC_SystemReset();
+        reboot_now();
+        break;
+    case SYS_CMD_CLEAR_TABLE:                       /* 擦掉保存的点表，重启后用内置默认表 */
+        LOGW("up", "clear saved point table + reboot");
+        gw_clear_saved_table();
+        reboot_now();
+        break;
+    case SYS_CMD_ENTER_BOOT:                        /* 第 7a 步还没有 Bootloader：重启后还是 App，日志里能看到 stay 1 */
+        LOGW("up", "enter bootloader by command");
+        if (gw_set_stay_in_boot(1) == 0)
+            reboot_now();                           /* 写失败就不重启，LAST_ERR = 0x0404 */
+        break;
+    case SYS_CMD_CLEAR_STAY:
+        gw_set_stay_in_boot(0);
+        break;
+    default:
+        break;
     }
 }
 

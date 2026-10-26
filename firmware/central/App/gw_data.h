@@ -1,5 +1,5 @@
 /*
- * gw_data.h - 中控的共享数据：点表、寄存器空间、系统区、点表下发，以及保护它们的锁
+ * gw_data.h - 中控的共享数据：点表、寄存器空间、系统区、点表下发和保存，以及保护它们的锁
  *
  * up 任务（上位机读写、下发点表）和 ch1 / ch2 任务（同步传感器）都要访问这些数据，
  * 这里集中创建，大家通过下面的函数拿指针。
@@ -39,7 +39,11 @@ void     gw_round_end(uint8_t ch);
 /* 0x15 回调（在 mb_slave_handle 里、gw_lock 内调用）：交给 table_loader */
 mb_ex_t gw_file_record(void *ctx, uint16_t file_no, uint16_t record_no, const uint8_t *data, uint16_t len);
 
-/* up 任务回完一帧后调用：如果收到了一张合法的新表，等两个通道停下来，换上。没有新表立刻返回 */
+/* up 任务回完一帧后调用：如果收到了一张合法的新表，等两个通道停下来，换上，再存进 Flash。没有新表立刻返回 */
 void gw_apply_table(void);
+
+/* 第 7a 步的命令（up 任务在回应发出去以后调用，不持有任何锁）。成功 0 */
+int gw_clear_saved_table(void);         /* 擦掉 Flash 里的点表：下次开机用内置默认表 */
+int gw_set_stay_in_boot(int stay);      /* 配置区的"下次开机留在 Bootloader"标志 */
 
 #endif /* GW_DATA_H */

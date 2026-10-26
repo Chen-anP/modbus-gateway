@@ -19,7 +19,7 @@ void sys_regs_init(sys_regs_t *s, uint16_t fw_ver, void (*get_ch_stat)(uint8_t c
 /* 这个地址有没有定义 */
 static int defined(uint16_t a)
 {
-    return (a >= SYS_REG_CMD && a <= SYS_REG_LAST_ERR) || (a >= SYS_REG_CH_STAT && a < CH_STAT_END);
+    return (a >= SYS_REG_CMD && a <= SYS_REG_PT_SOURCE) || (a >= SYS_REG_CH_STAT && a < CH_STAT_END);
 }
 
 /* 先检查整段地址：mb_slave_handle 会先调用它，全部合法才逐个读写（多寄存器写入要么全写，要么一个不写） */
@@ -48,6 +48,7 @@ static mb_ex_t sys_read(void *ctx, mb_table_t tab, uint16_t addr, uint16_t *valu
     case SYS_REG_FW_VER:    *value = s->fw_ver;    return MB_EX_NONE;
     case SYS_REG_POINT_CNT: *value = s->point_cnt; return MB_EX_NONE;
     case SYS_REG_LAST_ERR:  *value = s->last_err;  return MB_EX_NONE;
+    case SYS_REG_PT_SOURCE: *value = s->pt_source; return MB_EX_NONE;
     default: break;
     }
     if (addr >= SYS_REG_CH_STAT && addr < CH_STAT_END) {
@@ -75,8 +76,15 @@ static mb_ex_t sys_write(void *ctx, mb_table_t tab, uint16_t addr, uint16_t valu
 
     if (addr != SYS_REG_CMD)
         return MB_EX_ILLEGAL_ADDRESS;
-    if (value != SYS_CMD_REBOOT)                    /* 0x0B00、0x0A00 等第 7、8 步再支持 */
+    switch (value) {
+    case SYS_CMD_REBOOT:
+    case SYS_CMD_CLEAR_TABLE:
+    case SYS_CMD_ENTER_BOOT:
+    case SYS_CMD_CLEAR_STAY:
+        break;
+    default:                                        /* 第 8 步的转发命令等以后再加 */
         return MB_EX_ILLEGAL_VALUE;
+    }
     s->pending_cmd = value;                         /* 只记下来：现在重启，回应就发不出去了 */
     return MB_EX_NONE;
 }

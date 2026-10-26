@@ -8,13 +8,18 @@ gw_tool.py - 中控（Modbus 网关）的上位机工具：通过 USB 虚拟串�
   python gw_tool.py COM5 info                    系统区：版本、点数、最近错误、两个通道的统计
   python gw_tool.py COM5 read 1x 0 3             读：表可以写 0x/1x/3x/4x 或 coil/di/ir/hr
   python gw_tool.py COM5 write 0x 2 1            写一个线圈 / 保持寄存器
-  python gw_tool.py COM5 points points.csv       下发点表（0x15 文件记录）
+  python gw_tool.py COM5 points points.csv       下发点表（0x15 文件记录），中控换上后存进 Flash
+  python gw_tool.py COM5 reboot                  重启中控
+  python gw_tool.py COM5 clear-table             擦掉 Flash 里保存的点表并重启（重启后用内置默认表）
+  python gw_tool.py COM5 enter-boot              下次开机留在 Bootloader（配置区 stay = 1）并重启
+  python gw_tool.py COM5 clear-stay              清掉"留在 Bootloader"标志
   python gw_tool.py - encode points.csv out.bin  只把点表编码成文件，不连中控
 
 点表 CSV：每行一个点  表,通道,设备地址,中控地址,传感器寄存器地址   （# 开头是注释）
   例：1x,1,1,0,0   中控 1x 0 = ch1 上地址 1 的设备的 1x 0
 
-协议细节见学习资料《第 6 步学习笔记》和设计文档 4.3 节。
+协议细节见学习资料《第 6 步学习笔记》《第 7a 步学习笔记》和设计文档 4.2、4.3 节。
+注意：reboot / clear-table / enter-boot 之后中控重启，USB 串口会断开再出现，工具会直接退出。
 
 SPDX-License-Identifier: MIT
 Copyright (c) 2026 陈攀
@@ -32,7 +37,11 @@ TABLE_NAMES = ["0x", "1x", "3x", "4x"]
 READ_FC = [0x01, 0x02, 0x04, 0x03]
 EXCEPTIONS = {1: "非法功能码", 2: "非法地址（没映射 / 只读）", 3: "非法数值（命令 / 包序号 / 长度不对）", 4: "设备故障（CRC 不对 / 点表不合法）"}
 
-SYS_NAMES = ["CMD", "STATE", "FW_VER", "POINT_CNT", "LAST_ERR"]
+SYS_NAMES = ["CMD", "STATE", "FW_VER", "POINT_CNT", "LAST_ERR", "PT_SOURCE"]
+PT_SOURCE_TEXT = {0: "内置默认表（Flash 里没有保存的表）", 1: "开机从 Flash 读到的", 2: "这次下发的，已存进 Flash",
+                  3: "这次下发的，但存 Flash 失败（重启会丢）", 4: "Flash 里的表坏了，用的内置默认表"}
+SYS_CMDS = {"reboot": (0x0001, "重启"), "clear-table": (0x0002, "擦掉保存的点表并重启"),
+            "enter-boot": (0x0B00, "设置留在 Bootloader 并重启"), "clear-stay": (0x0A00, "清掉留在 Bootloader 标志")}
 LAST_ERR_TEXT = {
     0x0000: "无",
     0x0101: "点表：长度不是 8 的倍数", 0x0102: "点表：点太多（> 128）", 0x0103: "点表：表号不对",
@@ -41,6 +50,8 @@ LAST_ERR_TEXT = {
     0x0200: "设备拒绝写入（回了异常码）",
     0x0301: "文件：没收到文件头", 0x0302: "文件：文件头不对", 0x0303: "文件：跳包 / 乱序",
     0x0304: "文件：包长度不对", 0x0305: "文件：CRC32 不对",
+    0x0401: "Flash：点表保存失败", 0x0402: "Flash：保存的点表 CRC 不对", 0x0403: "Flash：保存的点表不合法",
+    0x0404: "Flash：写配置区失败",
 }
 
 
@@ -166,10 +177,14 @@ def send_file(gw: Gateway, file_no: int, data: bytes, name: str):
 # ------------------------------------------------------------------ 命令
 
 def cmd_info(gw: Gateway):
-    s = gw.read(3, 0xF000, 5)
+    s = gw.read(3, 0xF000, 6)
     print("系统区：")
     for name, v in zip(SYS_NAMES, s):
-        extra = f"  （{LAST_ERR_TEXT.get(v, '?')}）" if name == "LAST_ERR" else ""
+        extra = ""
+        if name == "LAST_ERR":
+            extra = f"  （{LAST_ERR_TEXT.get(v, '?')}）"
+        elif name == "PT_SOURCE":
+            extra = f"  （{PT_SOURCE_TEXT.get(v, '?')}）"
         print(f"  {name:10s} = {v} (0x{v:04X}){extra}")
     st = gw.read(3, 0xF020, 8)
     for ch in (1, 2):
@@ -208,11 +223,18 @@ def main(argv):
             print(f"下发点表：{len(points)} 个点，{len(data)} 字节，CRC32 = 0x{zlib.crc32(data) & 0xFFFFFFFF:08X}")
             try:
                 send_file(gw, FILE_NO_POINT_TABLE, data, "points.bin")
-                time.sleep(0.5)                                  # 中控等两个通道停下来再换表
+                time.sleep(1.0)                                  # 中控等两个通道停下来再换表，再存 Flash
                 print("中控已接受。")
             except ModbusError as e:
                 print(f"中控拒绝：{e}")
             cmd_info(gw)
+        elif cmd in SYS_CMDS:
+            code, text = SYS_CMDS[cmd]
+            gw.write(3, 0xF000, code)
+            print(f"  已发命令 0x{code:04X}：{text}")
+            if cmd == "clear-stay":
+                time.sleep(0.3)
+                cmd_info(gw)
         else:
             print(__doc__)
             return 1

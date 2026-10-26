@@ -1,14 +1,22 @@
 /*
  * sys_regs.h - 中控自己的"系统区"寄存器（保持寄存器 4x 0xF000～0xF0FF），上位机通过 USB 读写
  *
- * 设计文档 4.2 节的系统区，第 4 步先实现这些：
+ * 设计文档 4.2 节的系统区：
  *
  *   地址     读 / 写   含义
- *   0xF000   写        CMD：0x0001 = 重启（其他命令第 7、8 步加）；读出来总是 0
- *   0xF001   读        STATE：0 = 运行 App（第 7 步 Bootloader 里是 1）
+ *   0xF000   写        CMD（读出来总是 0）：
+ *                        0x0001 重启
+ *                        0x0002 清掉 Flash 里保存的点表，然后重启（重启后用内置默认表）       第 7a 步
+ *                        0x0B00 下次开机留在 Bootloader（写配置区 stay = 1），然后重启        第 7a 步
+ *                        0x0A00 清掉"留在 Bootloader"标志（不重启；Bootloader 里还会跳到 App） 第 7a 步
+ *   0xF001   读        STATE：0 = 运行 App（第 7b 步 Bootloader 里是 1）
  *   0xF002   读        FW_VER：固件版本
  *   0xF003   读        POINT_CNT：点表点数（第 5 步起由 reg_space_load 设置）
- *   0xF004   读        LAST_ERR：最近一次错误码：0x01xx 点表错误（低字节是 pt_err_t），0x0200 设备拒绝写入
+ *   0xF004   读        LAST_ERR：最近一次错误码：
+ *                        0x01xx 点表错误（低字节是 pt_err_t）   0x0200 设备拒绝写入   0x03xx 文件传输错误
+ *                        0x0401 点表存 Flash 失败   0x0402 Flash 里的点表 CRC 不对   0x0403 Flash 里的点表不合法
+ *                        0x0404 写配置区失败
+ *   0xF005   读        PT_SOURCE：现在的点表从哪来（见 SYS_PT_*）                                第 7a 步
  *   0xF020 + 4 ×（通道 − 1） + 0～3   读   每通道统计：成功、超时、CRC 错、掉线设备数（取低 16 位）
  *
  * 第 5 步起系统区由 reg_space 转交过来；这个模块本身只管 0xF000 起的地址，其他一律回异常 02。
@@ -30,11 +38,28 @@
 #define SYS_REG_FW_VER      0xF002u
 #define SYS_REG_POINT_CNT   0xF003u
 #define SYS_REG_LAST_ERR    0xF004u
+#define SYS_REG_PT_SOURCE   0xF005u
 #define SYS_REG_CH_STAT     0xF020u     /* 每通道 4 个：ok、timeout、crc、offline */
 #define SYS_CH_COUNT        2u
 
 #define SYS_CMD_NONE        0x0000u
 #define SYS_CMD_REBOOT      0x0001u
+#define SYS_CMD_CLEAR_TABLE 0x0002u
+#define SYS_CMD_ENTER_BOOT  0x0B00u
+#define SYS_CMD_CLEAR_STAY  0x0A00u
+
+/* PT_SOURCE：现在的点表从哪来 */
+#define SYS_PT_BUILTIN      0u      /* Flash 里没有保存的表，用内置默认表 */
+#define SYS_PT_FLASH        1u      /* 开机从 Flash 读到的 */
+#define SYS_PT_SAVED        2u      /* 这次运行中下发的，已经存进 Flash */
+#define SYS_PT_NOT_SAVED    3u      /* 这次运行中下发的，但存 Flash 失败（重启后会丢） */
+#define SYS_PT_FLASH_BAD    4u      /* Flash 里的表坏了，用的是内置默认表 */
+
+/* LAST_ERR 里 Flash 相关的错误 */
+#define SYS_ERR_PT_SAVE     0x0401u
+#define SYS_ERR_PT_CRC      0x0402u
+#define SYS_ERR_PT_INVALID  0x0403u
+#define SYS_ERR_CFG_WRITE   0x0404u
 
 /* 一个通道的统计（32 位计数，读的时候取低 16 位，65535 之后回到 0） */
 typedef struct {
@@ -49,6 +74,7 @@ typedef struct {
     uint16_t state;
     uint16_t point_cnt;
     uint16_t last_err;
+    uint16_t pt_source;     /* SYS_PT_* */
     void   (*get_ch_stat)(uint8_t ch, sys_ch_stat_t *out);    /* ch = 1、2；NULL 时统计读出来都是 0 */
     uint16_t pending_cmd;   /* 上位机写进来、还没执行的命令 */
 } sys_regs_t;

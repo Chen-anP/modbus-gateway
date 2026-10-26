@@ -60,10 +60,10 @@ int main(void)
     CHECK(v[0] == (uint16_t)70000u && v[1] == 12 && v[2] == 3 && v[3] == 0);
     CHECK(v[4] == 5 && v[5] == 29 && v[6] == 0 && v[7] == 1);
 
-    /* 3. 没定义的地址：0xF005、跨过空洞的 0xF004～0xF005、0xF028、映射区 0 → 异常 02 */
-    len = mb_build_read(req, 1, MB_TAB_HOLDING, 0xF005, 1);
+    /* 3. 没定义的地址：0xF006、跨过空洞的 0xF005～0xF006、0xF028、映射区 0 → 异常 02 */
+    len = mb_build_read(req, 1, MB_TAB_HOLDING, 0xF006, 1);
     CHECK(ask(req, len, v, 16, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_ADDRESS);
-    len = mb_build_read(req, 1, MB_TAB_HOLDING, 0xF004, 2);
+    len = mb_build_read(req, 1, MB_TAB_HOLDING, 0xF005, 2);
     CHECK(ask(req, len, v, 16, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_ADDRESS);
     len = mb_build_read(req, 1, MB_TAB_HOLDING, 0xF027, 2);
     CHECK(ask(req, len, v, 16, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_ADDRESS);
@@ -83,10 +83,30 @@ int main(void)
     CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_OK);
     CHECK(sys_regs_take_cmd(&s) == SYS_CMD_REBOOT && sys_regs_take_cmd(&s) == SYS_CMD_NONE);
 
-    /* 6. 写不支持的命令 0x0B00 → 异常 03，什么都不记 */
-    len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_CMD, 0x0B00);
+    /* 6. 写不支持的命令 0x0C00、0x0003、0xFFFF → 异常 03，什么都不记 */
+    len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_CMD, 0x0C00);
+    CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_VALUE);
+    len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_CMD, 0x0003);
+    CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_VALUE);
+    len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_CMD, 0xFFFF);
     CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_VALUE);
     CHECK(sys_regs_take_cmd(&s) == SYS_CMD_NONE);
+
+    /* 6b. 第 7a 步的三个新命令：都接受，记下来等 up 任务执行 */
+    len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_CMD, SYS_CMD_CLEAR_TABLE);
+    CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_OK && sys_regs_take_cmd(&s) == SYS_CMD_CLEAR_TABLE);
+    len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_CMD, SYS_CMD_ENTER_BOOT);
+    CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_OK && sys_regs_take_cmd(&s) == SYS_CMD_ENTER_BOOT);
+    len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_CMD, SYS_CMD_CLEAR_STAY);
+    CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_OK && sys_regs_take_cmd(&s) == SYS_CMD_CLEAR_STAY);
+
+    /* 6c. PT_SOURCE（0xF005）：读得到，不能写 */
+    s.pt_source = SYS_PT_FLASH;
+    len = mb_build_read(req, 1, MB_TAB_HOLDING, 0xF004, 2);
+    CHECK(ask(req, len, v, 16, &ex, &rep) == MB_OK && v[1] == SYS_PT_FLASH);
+    len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_PT_SOURCE, 0);
+    CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_ADDRESS);
+    CHECK(s.pt_source == SYS_PT_FLASH);
 
     /* 7. 写只读寄存器 FW_VER → 异常 02，版本号不变 */
     len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_FW_VER, 0x9999);
