@@ -80,6 +80,21 @@ gcc %CF% -I %APP% -I %BOOT% -I tests %APP%/mb_rtu.c %APP%/crc32.c %APP%/file_rx.
 if exist tests\out\test_boot_proto.exe tests\out\test_boot_proto.exe || set FAIL=1
 
 echo.
+echo ===== 15. boot_guard 启动次数、复位原因 =====
+gcc %CF% -I %APP% %APP%/boot_guard.c tests/test_boot_guard.c -o tests/out/test_boot_guard.exe || set FAIL=1
+if exist tests\out\test_boot_guard.exe tests\out\test_boot_guard.exe || set FAIL=1
+
+echo.
+echo ===== 16. wd 任务看门狗 =====
+gcc %CF% -I %APP% %APP%/wd.c tests/test_wd.c -o tests/out/test_wd.exe || set FAIL=1
+if exist tests\out\test_wd.exe tests\out\test_wd.exe || set FAIL=1
+
+echo.
+echo ===== 17. fwd 转发给传感器（模拟课程 F030 Bootloader） =====
+gcc %CF% -I %APP% %APP%/mb_rtu.c %APP%/crc32.c %APP%/fwd.c tests/test_fwd.c -o tests/out/test_fwd.exe || set FAIL=1
+if exist tests\out\test_fwd.exe tests\out\test_fwd.exe || set FAIL=1
+
+echo.
 if %FAIL%==0 (echo 全部通过) else (echo 有失败，往上翻看 FAIL 那一行)
 del /q tests\out\*.exe >nul 2>&1
 pause

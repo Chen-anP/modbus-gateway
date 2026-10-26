@@ -21,23 +21,72 @@
 #include "gw_data.h"
 #include "sys_regs.h"
 #include "version.h"
+#include "wdog.h"
+#include "fwd.h"
 #include "up_link.h"
 
 #define UP_GAP_MS           50u
 #define UP_WRITE_TIMEOUT_MS 100u
 #define UP_REPORT_MS        10000u
-#define UP_STACK_WORDS      512u                    /* 2 KB：帧组装器约 270 B + 回应缓冲 256 B + 日志 */
+#define UP_STACK_WORDS      1024u                   /* 4 KB（第 8b 步从 2 KB 加大）：转发时一层层调用下去有 4 个 256 字节的帧缓冲 + 两个帧组装器 */
 #define UP_PRIORITY         (tskIDLE_PRIORITY + 4)  /* 比轮询任务高：上位机的请求要及时回应 */
 
 static mb_slave_ops_t s_ops;
 static uint32_t       s_frames, s_replies, s_exceptions, s_write_fail;
 
 /* 处理一帧完整的请求 */
+static fwd_t s_fwd;                                 /* 第 8b 步：转发给传感器 */
+
+static uint16_t fwd_get_target(void *ctx)
+{
+    (void)ctx;
+    return gw_sys()->target;                        /* 16 位读，原子的 */
+}
+
+static void fwd_set_err(void *ctx, uint16_t err)
+{
+    (void)ctx;
+    gw_lock();
+    gw_sys()->last_err = err;
+    gw_unlock();
+}
+
+/* 转发请求（写 TARGET_CMD、0x15 发给传感器的文件）：不持有 gw_lock，可能要等几秒。处理了返回 1 */
+static int handle_forward(const uint8_t *req, uint16_t len)
+{
+    uint8_t rsp[MB_ADU_MAX];
+    fwd_state_t before = s_fwd.state;
+    uint32_t errs = s_fwd.errors;
+    int handled;
+    uint16_t n = fwd_handle(&s_fwd, UP_SLAVE_ADDR, req, len, rsp, &handled);
+
+    if (!handled)
+        return 0;
+    s_frames++;
+    if (s_fwd.errors != errs)
+        LOGW("fwd", "rejected: LAST_ERR 0x%04X, state %s", (unsigned)gw_sys()->last_err, fwd_state_name(s_fwd.state));
+    else if (s_fwd.state != before)
+        LOGI("fwd", "file 0x%04X: %s (%lu records, %lu bytes)", (unsigned)s_fwd.file_no, fwd_state_name(s_fwd.state),
+             (unsigned long)s_fwd.records_fwd, (unsigned long)s_fwd.sent);
+    else if (req[1] == MB_FC_WRITE_REG)
+        LOGI("fwd", "cmd 0x%02X%02X -> target 0x%04X ok", req[4], req[5], (unsigned)gw_sys()->target);
+    if (port_usb_write(rsp, n, UP_WRITE_TIMEOUT_MS) != 0) {
+        s_write_fail++;
+        return 1;
+    }
+    s_replies++;
+    if (rsp[1] & 0x80u)
+        s_exceptions++;
+    return 1;
+}
+
 static void handle_frame(const uint8_t *req, uint16_t len)
 {
     uint8_t rsp[MB_ADU_MAX];
     uint16_t rsp_len;
 
+    if (handle_forward(req, len))
+        return;
     s_frames++;
     log_hex(LOG_LVL_DEBUG, "up", "rx", req, len);
     gw_lock();
@@ -91,6 +140,15 @@ static void run_pending_cmd(void)
     case SYS_CMD_CLEAR_STAY:
         gw_set_stay_in_boot(0);
         break;
+    case SYS_CMD_TEST_HANG:                         /* 第 8 步故障测试 */
+        LOGW("up", "test: hang ch1");
+        wdog_test_hang_ch1();
+        break;
+    case SYS_CMD_TEST_CRASH:
+        LOGW("up", "test: crash at every boot from now on (bootloader will give up after %u tries)", 3u);
+        wdog_test_crash_at_boot();
+        reboot_now();
+        break;
     default:
         break;
     }
@@ -107,7 +165,10 @@ static void up_link_task(void *arg)
     LOGI("up", "slave addr %u on USB CDC, fw 0x%04X", (unsigned)UP_SLAVE_ADDR, (unsigned)FW_VERSION);
 
     for (;;) {
-        uint16_t n = port_usb_read(chunk, sizeof(chunk), 1000);
+        uint16_t n;
+
+        wdog_beat(WDOG_UP);                         /* 最多 1 秒报到一次（下面最多等 1 秒） */
+        n = port_usb_read(chunk, sizeof(chunk), 1000);
         uint32_t now = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
         const uint8_t *d = chunk;
 
@@ -145,6 +206,7 @@ void up_link_start(void)
     gw_data_init();                                 /* 已经由 poll_start 做过的话，这里什么都不做 */
     reg_space_ops(gw_rs(), &s_ops);
     s_ops.file_record = gw_file_record;             /* 0x15：点表下发 */
+    fwd_init(&s_fwd, gw_forward, NULL, fwd_get_target, fwd_set_err);
     usb_ok = port_usb_init();                       /* 不能直接写在 configASSERT() 里：断言关掉时整句会被删掉 */
     configASSERT(usb_ok == 0);
     (void)usb_ok;

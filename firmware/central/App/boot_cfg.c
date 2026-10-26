@@ -95,6 +95,7 @@ boot_decision_t boot_cfg_decide(const flash_io_t *io, const boot_cfg_t *cfg, uin
 const char *boot_decision_name(boot_decision_t d)
 {
     static const char *const k[] = { "jump", "jump (no config)", "stay: requested", "stay: no app",
-                                      "stay: bad length", "stay: bad crc", "stay: bad vectors" };
+                                      "stay: bad length", "stay: bad crc", "stay: bad vectors",
+                                      "stay: app keeps crashing" };
     return ((unsigned)d < sizeof(k) / sizeof(k[0])) ? k[d] : "?";
 }

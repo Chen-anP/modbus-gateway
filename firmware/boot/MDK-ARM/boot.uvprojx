@@ -469,6 +469,11 @@
               <FileType>1</FileType>
               <FilePath>../../central/App/usb_descriptors.c</FilePath>
             </File>
+            <File>
+              <FileName>boot_guard.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\central\App\boot_guard.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

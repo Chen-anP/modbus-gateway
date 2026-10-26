@@ -2,7 +2,7 @@
 
 STM32H563 + FreeRTOS。上行 USB 虚拟串口做 Modbus RTU 从机，下行两路 RS485 做 Modbus RTU 主机，轮询传感器；支持点表下发和转发固件升级。
 
-> 开发中，当前进度：第 7b 步（Bootloader、通过 USB 升级中控自己）。完成后补充功能说明、实测数据和演示。
+> 开发中，当前进度：第 8 步（看门狗、防"启动就死机"、通过中控升级传感器）。完成后补充功能说明、实测数据和演示。
 
 功能需求参考了百问网课程中"中控"的功能；本仓库的设计和代码为重新编写，不使用课程代码和 libmodbus。
 
@@ -42,6 +42,10 @@ firmware/central/       中控固件（App，0x08040000；CubeMX 生成 + Keil M
     flash_if.c/.h         HAL 擦写（8 KB 扇区、16 字节写），只允许擦写指定窗口
     pt_store.c/.h         点表存 Flash：先写数据最后写头，断电只会得到完整的表或"没有"
     boot_cfg.c/.h         配置区（App 长度、CRC、留在 Bootloader 标志）和 Bootloader 开机判断
+    boot_guard.c/.h       启动次数（连续 3 次没稳定就留在 Bootloader）、复位原因；guard_hw.h 是备份寄存器和 IWDG
+    wd.c/.h               任务看门狗的判断：所有任务都按时报到才喂狗
+    wdog.c/.h             App 的看门狗任务、故障测试命令
+    fwd.c/.h              转发给传感器：命令寄存器、0x15 固件（扣住文件头查向量表、按序号去重、最后一包前核对 CRC）
     poll_task.c/.h        两路 RS485 各一个通道任务
     port_usb.c/.h         USB 虚拟串口（CDC）收发，基于 TinyUSB；usbd 任务、中断交接
     usb_descriptors.c     USB 描述符；tusb_config.h 是 TinyUSB 配置
@@ -50,7 +54,7 @@ firmware/central/       中控固件（App，0x08040000；CubeMX 生成 + Keil M
   Middlewares/Third_Party/tinyusb/   TinyUSB 0.20.0（MIT），只保留用到的部分
   Core/ Drivers/ Middlewares/   CubeMX 生成
   central.ioc           CubeMX 配置
-tools/                  上位机工具 gw_tool.py（pyserial）：读写寄存器、下发 CSV 点表、系统命令、升级中控（upgrade）
+tools/                  上位机工具 gw_tool.py（pyserial）：读写寄存器、下发 CSV 点表、系统命令、升级中控（upgrade）、升级传感器（upgrade-sensor）
 tests/                  PC 端单元测试
   run_tests.bat         Windows 一键编译运行（需要 gcc）
   stubs/                FreeRTOS / HAL 的替身头文件
@@ -91,7 +95,7 @@ gcc -std=c99 -Wall -Wextra -I firmware/central/App firmware/central/App/mb_rtu.c
 | `test_log.c` | 14（含 `log_hex`，编译时加 `-DTEST_LOG_HEX`） |
 | `test_dev_health.c` | 19 |
 | `test_mb_master.c` | 31 |
-| `test_sys_regs.c` | 32 |
+| `test_sys_regs.c` | 45 |
 | `test_point_table.c` | 36 |
 | `test_reg_space.c` | 34 |
 | `test_point_sync.c` | 29 |
@@ -101,6 +105,9 @@ gcc -std=c99 -Wall -Wextra -I firmware/central/App firmware/central/App/mb_rtu.c
 | `test_boot_cfg.c` | 33 |
 | `test_app_flash.c` | 24（每一次 Flash 操作前断电） |
 | `test_boot_proto.c` | 31（真实请求帧走完整升级） |
+| `test_boot_guard.c` | 33 |
+| `test_wd.c` | 31 |
+| `test_fwd.c` | 35（模拟课程 F030 Bootloader 收固件的方式） |
 
 ## 许可
 

@@ -12,7 +12,7 @@
  *   0xF002   读        FW_VER = Bootloader 的版本
  *   0xF003   读        POINT_CNT = 0
  *   0xF004   读        LAST_ERR：0x03xx 文件传输错误，0x05xx 升级错误（低字节是 af_err_t）
- *   0xF005   读        BOOT_REASON：为什么留在 Bootloader（boot_decision_t）
+ *   0xF005   读        BOOT_REASON：为什么留在 Bootloader（boot_decision_t；7 = App 连续启动失败，第 8 步）
  *   0xF006   读        UPG_STATE：0 空闲 / 1 正在收 / 2 收齐了、正在写 Flash / 3 写好了、等 0x0A00 / 4 失败
  *   0xF007   读        APP_VER：配置区里记的 App 版本（低 16 位）
  *

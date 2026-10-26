@@ -17,6 +17,11 @@ gw_tool.py - 中控（Modbus 网关）的上位机工具：通过 USB 虚拟串�
   python gw_tool.py COM5 forget-app              （只在 Bootloader 里）清掉配置区记的 App 长度和 CRC 再启动：
                                                  用 Keil 下载过 App 后停在 Bootloader（BOOT_REASON = 5）时用
   python gw_tool.py COM5 upgrade central.bin [版本]   升级中控自己：进 Bootloader → 发固件 → 等写完 → 启动新 App
+  python gw_tool.py COM5 test-hang               故障测试：ch1 任务卡住 → 看门狗复位
+  python gw_tool.py COM5 sensor-cmd 2 3 0x55     通过中控给 ch2 地址 3 的传感器写命令寄存器（0x55 进 Bootloader，0xAA 启动 App）
+  python gw_tool.py COM5 upgrade-sensor 2 3 demo_f030_app.bin [版本]
+                                                 通过中控升级 ch2 地址 3 的传感器：0x55 → 发固件 → 0xAA
+  python gw_tool.py COM5 test-crash              故障测试：每次开机都"死机" → 3 次后留在 Bootloader（run-app 恢复）
   python gw_tool.py - encode points.csv out.bin  只把点表编码成文件，不连中控
 
 点表 CSV：每行一个点  表,通道,设备地址,中控地址,传感器寄存器地址   （# 开头是注释）
@@ -39,21 +44,28 @@ REC_DATA = 224                  # 0x15 每包数据字节数
 FILE_NO_POINT_TABLE = 0x0000
 FILE_NO_CENTRAL_FW = 0x1000         # 中控自己的固件（设计文档 4.3 节）
 APP_ADDR = 0x08040000               # App 的加载地址（第 7b 步起）
+SENSOR_APP_ADDR = 0x08020000        # 课程 F030 传感器的 App 地址
+SENSOR_APP_MAX = 0x1F800
+SENSOR_RAM = (0x20000000, 0x20008000)
 TABLES = {"0x": 0, "coil": 0, "1x": 1, "di": 1, "3x": 2, "ir": 2, "4x": 3, "hr": 3}
 TABLE_NAMES = ["0x", "1x", "3x", "4x"]
 READ_FC = [0x01, 0x02, 0x04, 0x03]
 EXCEPTIONS = {1: "非法功能码", 2: "非法地址（没映射 / 只读）", 3: "非法数值（命令 / 包序号 / 长度不对）", 4: "设备故障（CRC 不对 / 点表不合法）"}
 
-SYS_NAMES = ["CMD", "STATE", "FW_VER", "POINT_CNT", "LAST_ERR", "PT_SOURCE"]
+SYS_NAMES = ["CMD", "STATE", "FW_VER", "POINT_CNT", "LAST_ERR", "PT_SOURCE", "RESET_RSN", "BOOT_TRIES"]
+RESET_TEXT = {0: "未知", 1: "上电", 2: "复位键", 3: "软件复位（命令、升级、进出 Bootloader）", 4: "看门狗"}
 PT_SOURCE_TEXT = {0: "内置默认表（Flash 里没有保存的表）", 1: "开机从 Flash 读到的", 2: "这次下发的，已存进 Flash",
                   3: "这次下发的，但存 Flash 失败（重启会丢）", 4: "Flash 里的表坏了，用的内置默认表"}
 SYS_CMDS = {"reboot": (0x0001, "重启"), "clear-table": (0x0002, "擦掉保存的点表并重启"),
             "enter-boot": (0x0B00, "设置留在 Bootloader 并重启"), "clear-stay": (0x0A00, "清掉留在 Bootloader 标志"),
             "run-app": (0x0A00, "启动 App（在 App 里 = 清标志）"),
-            "forget-app": (0x0A01, "清掉配置区里的 App 信息并启动（用 Keil 下载 App 后停在 Bootloader 时用）")}
+            "forget-app": (0x0A01, "清掉配置区里的 App 信息并启动（用 Keil 下载 App 后停在 Bootloader 时用）"),
+            "test-hang": (0x0F01, "故障测试：ch1 任务卡住，看门狗应该在几秒后复位中控"),
+            "test-crash": (0x0F02, "故障测试：之后每次开机都\"死机\"，连续 3 次后 Bootloader 应该留下")}
 BOOT_NAMES = ["CMD", "STATE", "BOOT_VER", "POINT_CNT", "LAST_ERR", "BOOT_REASON", "UPG_STATE", "APP_VER"]
 BOOT_REASON_TEXT = {0: "跳 App", 1: "跳 App（没有配置）", 2: "上位机要求留下（stay = 1）", 3: "没有 App（App 区是空的或没写完）",
-                    4: "配置里的长度不对", 5: "App 的 CRC 不对", 6: "App 的向量表不对"}
+                    4: "配置里的长度不对", 5: "App 的 CRC 不对", 6: "App 的向量表不对",
+                    7: "App 连续 3 次启动都没稳定下来（看门狗复位），等升级或 run-app"}
 UPG_STATE_TEXT = {0: "空闲", 1: "正在收", 2: "收齐了，正在写 Flash", 3: "写好了，等 0x0A00 启动", 4: "失败"}
 LAST_ERR_TEXT = {
     0x0000: "无",
@@ -65,6 +77,10 @@ LAST_ERR_TEXT = {
     0x0304: "文件：包长度不对", 0x0305: "文件：CRC32 不对",
     0x0401: "Flash：点表保存失败", 0x0402: "Flash：保存的点表 CRC 不对", 0x0403: "Flash：保存的点表不合法",
     0x0404: "Flash：写配置区失败",
+    0x0601: "转发：TARGET 没设或不合法", 0x0602: "转发：传感器没回应", 0x0603: "转发：传感器回了异常码",
+    0x0604: "转发：没有文件头 / 跳包", 0x0605: "转发：之前有一包失败了，要从文件头重来",
+    0x0606: "转发：第 1 包不像传感器 App（发错文件了？传感器没动）", 0x0607: "转发：整个文件 CRC 不对，最后一包没发（传感器留在 Bootloader）",
+    0x0608: "转发：文件长度不对", 0x0609: "转发：请求格式不对",
     0x0501: "升级：加载地址不是 0x08040000（Keil 的 IROM1 改了吗？）", 0x0502: "升级：固件太大或太小",
     0x0503: "升级：向量表不对", 0x0504: "升级：擦 Flash 失败", 0x0505: "升级：写 Flash 失败",
     0x0506: "升级：写完核对 CRC 不对", 0x0507: "升级：写配置区失败",
@@ -205,7 +221,10 @@ def cmd_info(gw: Gateway):
             extra = f"  （{extra.get(v, '?')}）" if extra else ""
             print(f"  {name:11s} = {v} (0x{v:04X}){extra}")
         return s
-    s = gw.read(3, 0xF000, 6)
+    try:
+        s = gw.read(3, 0xF000, 8)
+    except ModbusError:                                          # 第 8 步之前的固件只有 6 个
+        s = gw.read(3, 0xF000, 6)
     print("系统区：")
     for name, v in zip(SYS_NAMES, s):
         extra = ""
@@ -213,6 +232,8 @@ def cmd_info(gw: Gateway):
             extra = f"  （{LAST_ERR_TEXT.get(v, '?')}）"
         elif name == "PT_SOURCE":
             extra = f"  （{PT_SOURCE_TEXT.get(v, '?')}）"
+        elif name == "RESET_RSN":
+            extra = f"  （{RESET_TEXT.get(v, '?')}）"
         print(f"  {name:10s} = {v} (0x{v:04X}){extra}")
     st = gw.read(3, 0xF020, 8)
     for ch in (1, 2):
@@ -240,6 +261,63 @@ def reconnect(port: str, what: str, wait: float = 15.0) -> "Gateway":
         print(".", end="", flush=True)
         time.sleep(0.5)
     raise ModbusError(f"{wait:.0f} 秒内没连上：设备管理器里 {port} 还在吗？")
+
+
+def set_target(gw: Gateway, ch: int, addr: int):
+    gw.write(3, 0xF010, (ch << 8) | addr)
+
+
+def sensor_cmd(gw: Gateway, ch: int, addr: int, value: int):
+    set_target(gw, ch, addr)
+    gw.write(3, 0xF011, value)
+
+
+def last_err_text(gw: Gateway) -> str:
+    e = gw.read(3, 0xF004, 1)[0]
+    return f"LAST_ERR = 0x{e:04X}（{LAST_ERR_TEXT.get(e, '?')}）"
+
+
+def cmd_upgrade_sensor(port: str, ch: int, addr: int, path: str, version: int) -> int:
+    data = open(path, "rb").read()
+    sp, entry = struct.unpack("<II", data[:8])
+    print(f"传感器固件 {path}：{len(data)} 字节，CRC32 = 0x{zlib.crc32(data) & 0xFFFFFFFF:08X}，"
+          f"目标 ch{ch} 地址 {addr}，版本 {version}")
+    print(f"  向量表：栈指针 0x{sp:08X}，复位入口 0x{entry:08X}")
+    if not (SENSOR_RAM[0] <= sp <= SENSOR_RAM[1] and SENSOR_APP_ADDR <= (entry & ~1) < SENSOR_APP_ADDR + len(data)):
+        print("  ✗ 这不像课程传感器的 App（应该按 0x08020000 编译）。中控也会拒绝，这里先停下")
+        return 2
+    if len(data) > SENSOR_APP_MAX:
+        print(f"  ✗ 太大：传感器 App 区只有 {SENSOR_APP_MAX} 字节")
+        return 2
+
+    gw = Gateway(port)
+    try:
+        print("1. 让传感器进 Bootloader（0x55）")
+        sensor_cmd(gw, ch, addr, 0x55)
+        time.sleep(2.0)                                          # 传感器写配置、复位、Bootloader 启动
+
+        print("2. 发固件（中控转发；文件头要等传感器擦 Flash，第 1 包会慢一些）")
+        gw.timeout = 8.0                                         # 文件头：中控最多等传感器 2 × 3 秒
+        t0 = time.time()
+        try:
+            send_file(gw, FILE_NO_CENTRAL_FW | (ch << 8) | addr, data, "sensor.bin", version, SENSOR_APP_ADDR)
+        except ModbusError as e:
+            gw.timeout = 1.0
+            print(f"   中控拒绝 / 转发失败：{e}")
+            print(f"   {last_err_text(gw)}")
+            print("传感器留在 Bootloader（或者没被动过），可以重新 upgrade-sensor")
+            return 2
+        gw.timeout = 1.0
+        print(f"   发完 {time.time() - t0:.1f} s")
+
+        print("3. 启动传感器的新 App（0xAA）")
+        sensor_cmd(gw, ch, addr, 0xAA)
+        time.sleep(2.0)
+        cmd_info(gw)
+        print("完成。看中控日志里这个设备是否重新 online，读一下它的点确认数据正常")
+        return 0
+    finally:
+        gw.close()
 
 
 def cmd_upgrade(port: str, path: str, version: int) -> int:
@@ -320,6 +398,14 @@ def main(argv):
         print(f"{len(data) // 8} 个点，{len(data)} 字节，CRC32 = 0x{zlib.crc32(data) & 0xFFFFFFFF:08X} → {args[1]}")
         return 0
 
+    if cmd == "upgrade-sensor":
+        try:
+            return cmd_upgrade_sensor(port, int(args[0], 0), int(args[1], 0), args[2],
+                                      int(args[3], 0) if len(args) > 3 else 1)
+        except ModbusError as e:
+            print(f"错误：{e}")
+            return 2
+
     if cmd == "upgrade":                                         # 会多次断开重连，自己管串口
         try:
             return cmd_upgrade(port, args[0], int(args[1], 0) if len(args) > 1 else 0)
@@ -351,6 +437,13 @@ def main(argv):
             except ModbusError as e:
                 print(f"中控拒绝：{e}")
             cmd_info(gw)
+        elif cmd == "sensor-cmd":
+            ch, addr, val = int(args[0], 0), int(args[1], 0), int(args[2], 0)
+            try:
+                sensor_cmd(gw, ch, addr, val)
+                print(f"  已写 ch{ch} 地址 {addr} 的命令寄存器 = 0x{val:04X}")
+            except ModbusError as e:
+                print(f"  失败：{e}；{last_err_text(gw)}")
         elif cmd in SYS_CMDS:
             code, text = SYS_CMDS[cmd]
             gw.write(3, 0xF000, code)

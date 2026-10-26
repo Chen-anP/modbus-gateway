@@ -9,6 +9,8 @@
  *                        0x0002 清掉 Flash 里保存的点表，然后重启（重启后用内置默认表）       第 7a 步
  *                        0x0B00 下次开机留在 Bootloader（写配置区 stay = 1），然后重启        第 7a 步
  *                        0x0A00 清掉"留在 Bootloader"标志（不重启；Bootloader 里还会跳到 App） 第 7a 步
+ *                        0x0F01 故障测试：ch1 任务故意卡住，看门狗应该复位中控                 第 8 步
+ *                        0x0F02 故障测试：设"开机就死机"标志并重启，连续 3 次后留在 Bootloader   第 8 步
  *   0xF001   读        STATE：0 = 运行 App（第 7b 步 Bootloader 里是 1）
  *   0xF002   读        FW_VER：固件版本
  *   0xF003   读        POINT_CNT：点表点数（第 5 步起由 reg_space_load 设置）
@@ -17,6 +19,11 @@
  *                        0x0401 点表存 Flash 失败   0x0402 Flash 里的点表 CRC 不对   0x0403 Flash 里的点表不合法
  *                        0x0404 写配置区失败
  *   0xF005   读        PT_SOURCE：现在的点表从哪来（见 SYS_PT_*）                                第 7a 步
+ *   0xF006   读        RESET_REASON：上次复位的原因（rr_t：1 上电 2 复位键 3 软件 4 看门狗）       第 8 步
+ *   0xF007   读        BOOT_TRIES：这次开机时的启动次数（稳定 5 秒后备份寄存器里清零，这里不变）   第 8 步
+ *   0xF010   读写      TARGET：转发目标，高字节通道（1、2），低字节设备地址（1～247）               第 8b 步
+ *   0xF011   写        TARGET_CMD：写到目标传感器的 4x 寄存器 0（由 fwd.c 在 up 任务里处理，不经过这里）
+ *                      读出来总是 0；用 0x10 写多个寄存器写到它 → 异常 02
  *   0xF020 + 4 ×（通道 − 1） + 0～3   读   每通道统计：成功、超时、CRC 错、掉线设备数（取低 16 位）
  *
  * 第 5 步起系统区由 reg_space 转交过来；这个模块本身只管 0xF000 起的地址，其他一律回异常 02。
@@ -39,6 +46,10 @@
 #define SYS_REG_POINT_CNT   0xF003u
 #define SYS_REG_LAST_ERR    0xF004u
 #define SYS_REG_PT_SOURCE   0xF005u
+#define SYS_REG_RESET_RSN   0xF006u
+#define SYS_REG_BOOT_TRIES  0xF007u
+#define SYS_REG_TARGET      0xF010u
+#define SYS_REG_TARGET_CMD  0xF011u
 #define SYS_REG_CH_STAT     0xF020u     /* 每通道 4 个：ok、timeout、crc、offline */
 #define SYS_CH_COUNT        2u
 
@@ -47,6 +58,8 @@
 #define SYS_CMD_CLEAR_TABLE 0x0002u
 #define SYS_CMD_ENTER_BOOT  0x0B00u
 #define SYS_CMD_CLEAR_STAY  0x0A00u
+#define SYS_CMD_TEST_HANG   0x0F01u
+#define SYS_CMD_TEST_CRASH  0x0F02u
 
 /* PT_SOURCE：现在的点表从哪来 */
 #define SYS_PT_BUILTIN      0u      /* Flash 里没有保存的表，用内置默认表 */
@@ -75,6 +88,9 @@ typedef struct {
     uint16_t point_cnt;
     uint16_t last_err;
     uint16_t pt_source;     /* SYS_PT_* */
+    uint16_t reset_reason;  /* rr_t（boot_guard.h） */
+    uint16_t boot_tries;
+    uint16_t target;        /* 转发目标：通道 << 8 | 地址，0 = 没设 */
     void   (*get_ch_stat)(uint8_t ch, sys_ch_stat_t *out);    /* ch = 1、2；NULL 时统计读出来都是 0 */
     uint16_t pending_cmd;   /* 上位机写进来、还没执行的命令 */
 } sys_regs_t;

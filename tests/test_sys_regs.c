@@ -60,10 +60,10 @@ int main(void)
     CHECK(v[0] == (uint16_t)70000u && v[1] == 12 && v[2] == 3 && v[3] == 0);
     CHECK(v[4] == 5 && v[5] == 29 && v[6] == 0 && v[7] == 1);
 
-    /* 3. 没定义的地址：0xF006、跨过空洞的 0xF005～0xF006、0xF028、映射区 0 → 异常 02 */
-    len = mb_build_read(req, 1, MB_TAB_HOLDING, 0xF006, 1);
+    /* 3. 没定义的地址：0xF008、跨过空洞的 0xF007～0xF008、0xF028、映射区 0 → 异常 02 */
+    len = mb_build_read(req, 1, MB_TAB_HOLDING, 0xF008, 1);
     CHECK(ask(req, len, v, 16, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_ADDRESS);
-    len = mb_build_read(req, 1, MB_TAB_HOLDING, 0xF005, 2);
+    len = mb_build_read(req, 1, MB_TAB_HOLDING, 0xF007, 2);
     CHECK(ask(req, len, v, 16, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_ADDRESS);
     len = mb_build_read(req, 1, MB_TAB_HOLDING, 0xF027, 2);
     CHECK(ask(req, len, v, 16, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_ADDRESS);
@@ -99,6 +99,39 @@ int main(void)
     CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_OK && sys_regs_take_cmd(&s) == SYS_CMD_ENTER_BOOT);
     len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_CMD, SYS_CMD_CLEAR_STAY);
     CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_OK && sys_regs_take_cmd(&s) == SYS_CMD_CLEAR_STAY);
+
+    /* 6b'. 第 8 步的两个故障测试命令也接受 */
+    len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_CMD, SYS_CMD_TEST_HANG);
+    CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_OK && sys_regs_take_cmd(&s) == SYS_CMD_TEST_HANG);
+    len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_CMD, SYS_CMD_TEST_CRASH);
+    CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_OK && sys_regs_take_cmd(&s) == SYS_CMD_TEST_CRASH);
+
+    /* 6d. RESET_REASON（0xF006）、BOOT_TRIES（0xF007）：读得到，不能写 */
+    s.reset_reason = 4; s.boot_tries = 2;
+    len = mb_build_read(req, 1, MB_TAB_HOLDING, 0xF006, 2);
+    CHECK(ask(req, len, v, 16, &ex, &rep) == MB_OK && v[0] == 4 && v[1] == 2);
+    len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_RESET_RSN, 0);
+    CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_ADDRESS);
+
+    /* 6e. TARGET（0xF010）：能写能读；通道 0、3，地址 0、248 → 异常 03；TARGET_CMD（0xF011）读出 0，用 0x10 写 → 异常 02 */
+    len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_TARGET, 0x0203);
+    CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_OK && s.target == 0x0203);
+    len = mb_build_read(req, 1, MB_TAB_HOLDING, SYS_REG_TARGET, 2);
+    CHECK(ask(req, len, v, 16, &ex, &rep) == MB_OK && v[0] == 0x0203 && v[1] == 0);
+    {
+        static const uint16_t bad[] = { 0x0003, 0x0303, 0x0200, 0x02F8 };
+        for (int i = 0; i < 4; i++) {
+            len = mb_build_write_single(req, 1, MB_TAB_HOLDING, SYS_REG_TARGET, bad[i]);
+            CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_VALUE);
+        }
+        CHECK(s.target == 0x0203);
+    }
+    {
+        const uint16_t vals[2] = { 0x0103, 0x55 };
+        len = mb_build_write_regs(req, 1, SYS_REG_TARGET, 2, vals);
+        CHECK(ask(req, len, NULL, 0, &ex, &rep) == MB_ERR_EXCEPTION && ex == MB_EX_ILLEGAL_ADDRESS);
+        CHECK(s.target == 0x0203);                  /* 整条拒绝，TARGET 也没改 */
+    }
 
     /* 6c. PT_SOURCE（0xF005）：读得到，不能写 */
     s.pt_source = SYS_PT_FLASH;

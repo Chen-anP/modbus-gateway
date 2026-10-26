@@ -42,6 +42,11 @@ mb_ex_t gw_file_record(void *ctx, uint16_t file_no, uint16_t record_no, const ui
 /* up 任务回完一帧后调用：如果收到了一张合法的新表，等两个通道停下来，换上，再存进 Flash。没有新表立刻返回 */
 void gw_apply_table(void);
 
+/* 第 8b 步：在通道 ch（1、2）上发一个请求、等回应（fwd.c 的 transact）。up 任务里、不持有 gw_lock 时调用：
+ * 拿这个通道的轮锁（通道任务停在两轮之间），临时改超时和重试次数，用通道自己的 mb_master 收发 */
+int gw_forward(void *ctx, uint8_t ch, const uint8_t *req, uint16_t req_len,
+               uint32_t timeout_ms, uint8_t retries, mb_ex_t *ex);
+
 /* 第 7a 步的命令（up 任务在回应发出去以后调用，不持有任何锁）。成功 0 */
 int gw_clear_saved_table(void);         /* 擦掉 Flash 里的点表：下次开机用内置默认表 */
 int gw_set_stay_in_boot(int stay);      /* 配置区的"下次开机留在 Bootloader"标志 */

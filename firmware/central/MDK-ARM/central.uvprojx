@@ -734,6 +734,26 @@
               <FileType>1</FileType>
               <FilePath>..\App\pt_store.c</FilePath>
             </File>
+            <File>
+              <FileName>boot_guard.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\boot_guard.c</FilePath>
+            </File>
+            <File>
+              <FileName>wd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\wd.c</FilePath>
+            </File>
+            <File>
+              <FileName>wdog.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\wdog.c</FilePath>
+            </File>
+            <File>
+              <FileName>fwd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\fwd.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

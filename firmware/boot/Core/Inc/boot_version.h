@@ -9,6 +9,6 @@
 #ifndef BOOT_VERSION_H
 #define BOOT_VERSION_H
 
-#define BOOT_VERSION    0x0100u
+#define BOOT_VERSION    0x0101u     /* 0x0101：第 8 步，启动次数 + 看门狗 */
 
 #endif /* BOOT_VERSION_H */

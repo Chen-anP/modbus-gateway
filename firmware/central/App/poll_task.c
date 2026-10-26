@@ -17,6 +17,7 @@
 #include "log.h"
 #include "port_uart.h"
 #include "gw_data.h"
+#include "wdog.h"
 #include "poll_task.h"
 
 #define RSP_TIMEOUT_MS   100u   /* 等回应最多 100 ms（实测往返 1~2 ms，留足余量） */
@@ -102,6 +103,12 @@ static void poll_task(void *arg)
         }
         point_sync_step(&c->ps);
         gw_round_end(c->ch);
+        wdog_beat((uint32_t)(c->ch - 1u));      /* 这一轮跑完了：向看门狗报到（第 8 步） */
+        if (wdog_test_should_hang((uint32_t)(c->ch - 1u))) {
+            LOGW(c->io.name, "test: task hangs now (watchdog should reset in a few seconds)");
+            for (;;)
+                vTaskDelay(pdMS_TO_TICKS(1000));   /* 卡在这里不再报到：模拟死锁 */
+        }
 
         if ((int32_t)(io_now_ms() - next_report) >= 0) {
             next_report += REPORT_MS;
@@ -121,10 +128,18 @@ void poll_start(void)
     BaseType_t r1, r2;
 
     gw_data_init();
+    wdog_start();                           /* 第 8 步：复位原因、启动次数、看门狗任务 */
     r1 = xTaskCreate(poll_task, "ch1", POLL_STACK_WORDS, &s_ch[0], tskIDLE_PRIORITY + 3, NULL);
     r2 = xTaskCreate(poll_task, "ch2", POLL_STACK_WORDS, &s_ch[1], tskIDLE_PRIORITY + 3, NULL);
     configASSERT(r1 == pdPASS && r2 == pdPASS);
     (void)r1; (void)r2;
+}
+
+mb_master_t *poll_master(uint8_t ch)
+{
+    if (ch >= 2 || !s_ch[ch].ready)
+        return NULL;
+    return &s_ch[ch].mb;
 }
 
 const point_sync_t *poll_get(uint8_t ch)

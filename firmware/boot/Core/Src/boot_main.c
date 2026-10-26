@@ -32,6 +32,8 @@
 #include "boot_proto.h"
 #include "boot_usb.h"
 #include "boot_version.h"
+#include "boot_guard.h"
+#include "guard_hw.h"
 
 #define SLAVE_ADDR      1u
 #define FRAME_GAP_MS    50u
@@ -117,6 +119,8 @@ static void do_program(void)
                           s_bp.rx.hdr.crc32, s_bp.rx.hdr.version);
     boot_proto_program_done(&s_bp, e);
     if (e == AF_OK)
+        (void)bkp_write_check(BKP_REG_TRIES, bg_tries_encode(0));   /* 新 App 重新有 3 次机会 */
+    if (e == AF_OK)
         LOGI("boot", "programmed in %lu ms (%lu sectors erased, %lu x 16 bytes written); send 0x0A00 to start it",
              (unsigned long)(HAL_GetTick() - t0), (unsigned long)fs->erases, (unsigned long)fs->writes);
     else
@@ -140,6 +144,7 @@ static void do_run_app(int forget)
             return;
         }
     }
+    (void)bkp_write_check(BKP_REG_TRIES, bg_tries_encode(0));      /* 人工要求启动：重新给 3 次机会 */
     LOGW("boot", "start app%s: reset", forget ? " (app info cleared)" : "");
     boot_wait_ms(100);                      /* 等回应送到电脑、日志打完 */
     NVIC_SystemReset();
@@ -178,13 +183,28 @@ int main(void)
     d = boot_cfg_decide(flash_if_io(), has_cfg ? &cfg : NULL, FL_APP_ADDR, FL_APP_MAX, FL_RAM_START, FL_RAM_END);
 
     /* 2. 跳 */
-    if (d == BOOT_JUMP) {
-        early_print("\r\n[boot] jump to app\r\n");
-        jump_to_app(FL_APP_ADDR);
-    }
-    if (d == BOOT_JUMP_NO_CFG) {
-        early_print("\r\n[boot] jump to app (no config, crc not checked)\r\n");
-        jump_to_app(FL_APP_ADDR);
+    if (d == BOOT_JUMP || d == BOOT_JUMP_NO_CFG) {
+        uint32_t tries;
+
+        bkp_open();
+        tries = bg_tries(bkp_read(BKP_REG_TRIES));
+        if (bg_too_many(tries)) {
+            d = BOOT_STAY_BOOTLOOP;             /* 连续几次都没确认：不跳了（第 8 步） */
+            (void)bkp_write_check(BKP_REG_FLAGS, bg_flags_encode(0));   /* 清掉"开机就死机"测试标志，下次 run-app 就正常了 */
+        } else {
+            static char msg[] = "\r\n[boot] jump to app, try ?/3\r\n";
+            static char msg_nc[] = "\r\n[boot] jump to app (no config, crc not checked), try ?/3\r\n";
+            char *m = (d == BOOT_JUMP) ? msg : msg_nc;
+
+            int ok = bkp_write_check(BKP_REG_TRIES, bg_tries_encode(tries + 1u));   /* App 稳定 5 秒后清零 */
+            /* 不调用 bkp_close()：保持备份域可写、时钟开着，App 反正也要打开（10/26 写了马上关，值丢了） */
+            m[strlen(m) - 5] = (char)('1' + tries);                  /* "?" → 第几次 */
+            early_print(m);
+            if (!ok)
+                early_print("[boot] WARNING: backup register write failed, boot tries not counted\r\n");
+            iwdg_start();                       /* App 启动过程中卡死也会被复位；App 里的看门狗任务接着喂 */
+            jump_to_app(FL_APP_ADDR);
+        }
     }
 
     /* 3. 留下 */
@@ -194,6 +214,13 @@ int main(void)
     log_init();
     LOGI("boot", "bootloader 0x%04X, sysclk %lu Hz", (unsigned)BOOT_VERSION, (unsigned long)HAL_RCC_GetSysClockFreq());
     LOGW("boot", "stay in bootloader: %s", boot_decision_name(d));
+    {
+        uint32_t rsr = RCC->RSR;
+        bkp_open();
+        LOGI("boot", "reset reason: %s (RSR 0x%08lX), boot tries %lu/%u", rr_name(rr_decode(rsr)),
+             (unsigned long)rsr, (unsigned long)bg_tries(bkp_read(BKP_REG_TRIES)), (unsigned)BG_MAX_TRIES);
+        RCC->RSR |= RCC_RSR_RMVF;               /* 留下时清掉：App 下次读到的只是最后那一次复位的原因 */
+    }
     if (has_cfg)
         LOGI("boot", "config: app len %lu crc %08lX ver %lu, stay %lu", (unsigned long)cfg.app_len,
              (unsigned long)cfg.app_crc, (unsigned long)cfg.app_ver, (unsigned long)cfg.stay);

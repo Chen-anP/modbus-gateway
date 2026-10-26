@@ -30,6 +30,8 @@
 #include "flash_if.h"
 #include "pt_store.h"
 #include "boot_cfg.h"
+#include "mb_master.h"
+#include "wdog.h"
 #include "gw_data.h"
 
 static point_table_t     s_pt;
@@ -249,5 +251,60 @@ int gw_set_stay_in_boot(int stay)
     }
     LOGW("gw", "boot config: stay = %u %s (erase %lu ms)", (unsigned)c.stay, rc == 0 ? "ok" : "FAILED",
          (unsigned long)flash_if_stats()->last_erase_ms);
+    return rc;
+}
+
+/* 转发时允许回应里两个字节之间停多久（平时 5 ms）。10/26 第一次转发失败时，回应分成了好几段收到
+ * （port 的 ev 比 reads 多 4），怀疑课程传感器发长回应时中途会停顿，超过 5 ms 中控就把半帧丢了 → CRC 错 */
+#define FWD_BYTE_GAP_MS 30u
+
+int gw_forward(void *ctx, uint8_t ch, const uint8_t *req, uint16_t req_len,
+               uint32_t timeout_ms, uint8_t retries, mb_ex_t *ex)
+{
+    mb_master_t *m;
+    uint32_t old_timeout, old_gap, worst = timeout_ms * (retries + 1u) + 1000u;
+    uint8_t old_retries;
+    int rc;
+    (void)ctx;
+
+    if (ch < 1u || ch > PT_CH_COUNT)
+        return MB_ERR_PARAM;
+    wdog_allow(WDOG_UP, worst);                         /* 等传感器擦 Flash 可能要几秒：告诉看门狗这不是卡死 */
+    wdog_allow((uint32_t)(ch - 1u), worst);             /* 通道任务这段时间停在 gw_round_begin 里，也不会报到 */
+    (void)gw_round_begin(ch);
+    m = poll_master((uint8_t)(ch - 1u));
+    if (m == NULL) {
+        gw_round_end(ch);
+        return MB_ERR_PARAM;
+    }
+    old_timeout = m->rsp_timeout_ms;
+    old_retries = m->retries;
+    old_gap = m->byte_gap_ms;
+    m->rsp_timeout_ms = timeout_ms;
+    m->retries = retries;
+    m->byte_gap_ms = FWD_BYTE_GAP_MS;
+    {
+        mb_master_stats_t before = m->st;
+        uint32_t t0 = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+        int dbg = (req_len <= 64u);         /* 命令、文件头：短帧，临时打开 DEBUG，把收发的原始字节打出来（第 8b 步排查） */
+
+        if (dbg)
+            log_set_level(LOG_LVL_DEBUG);
+        rc = mb_master_request(m, req, req_len, NULL, 0, ex);
+        if (dbg)
+            log_set_level(LOG_LVL_INFO);
+        if (rc != MB_OK)
+            LOGW("fwd", "ch%u dev %u fc 0x%02X: rc %d after %lu ms (timeout +%lu crc +%lu frame +%lu send +%lu exc +%lu)",
+                 (unsigned)ch, (unsigned)req[0], (unsigned)req[1], rc,
+                 (unsigned long)((uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS) - t0),
+                 (unsigned long)(m->st.timeouts - before.timeouts), (unsigned long)(m->st.crc_errors - before.crc_errors),
+                 (unsigned long)(m->st.frame_errors - before.frame_errors),
+                 (unsigned long)(m->st.send_errors - before.send_errors),
+                 (unsigned long)(m->st.exceptions - before.exceptions));
+    }
+    m->rsp_timeout_ms = old_timeout;
+    m->retries = old_retries;
+    m->byte_gap_ms = old_gap;
+    gw_round_end(ch);
     return rc;
 }

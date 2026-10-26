@@ -47,7 +47,8 @@ typedef enum {
     BOOT_STAY_NO_APP,       /* 没有配置，向量表也不合理：App 区是空的或者没写完 */
     BOOT_STAY_BAD_LEN,      /* 配置里的长度小于 8（放不下向量表）或者超出 App 区 */
     BOOT_STAY_BAD_CRC,      /* App 的 CRC 和配置里的对不上：升级没完成、Flash 坏了 */
-    BOOT_STAY_BAD_VEC       /* CRC 对，但向量表不合理（下载了别的地址编译的固件） */
+    BOOT_STAY_BAD_VEC,      /* CRC 对，但向量表不合理（下载了别的地址编译的固件） */
+    BOOT_STAY_BOOTLOOP      /* App 连续几次启动都没"确认"就复位了（第 8 步，boot_guard.h）；不是 decide 给的，Bootloader 自己判断 */
 } boot_decision_t;
 
 /* 读配置区。有效（魔数、自己的 CRC 都对）返回 1，*out 填好；否则返回 0 */
