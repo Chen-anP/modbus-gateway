@@ -103,7 +103,7 @@ void reg_space_ops(reg_space_t *rs, mb_slave_ops_t *ops)
     ops->check = rs_check;
     ops->read = rs_read;
     ops->write = rs_write;
-    ops->file_record = NULL;                            /* 0x15 第 6 步 */
+    ops->file_record = NULL;                            /* 0x15 由调用者接（up_link 接到 gw_file_record） */
 }
 
 /* ---------------------------------------------------------------- 通道任务用 */

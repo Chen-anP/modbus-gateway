@@ -704,6 +704,21 @@
               <FileType>1</FileType>
               <FilePath>..\App\reg_space.c</FilePath>
             </File>
+            <File>
+              <FileName>crc32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\crc32.c</FilePath>
+            </File>
+            <File>
+              <FileName>file_rx.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\file_rx.c</FilePath>
+            </File>
+            <File>
+              <FileName>table_loader.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\App\table_loader.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

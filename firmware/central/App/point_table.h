@@ -12,7 +12,7 @@
  *
  * 校验（任何一条不满足，整张表拒绝，旧表继续生效）：
  *   长度是 8 的倍数、点数 1～PT_MAX_POINTS；表 0～3；通道 1～2；设备地址 1～247；
- *   中控地址 ≤ 499；同一个"表 + 中控地址"不能出现两次
+ *   中控地址 ≤ 499；同一个"表 + 中控地址"不能出现两次；每个通道最多 8 个设备
  *
  * 解析后按 <通道, 设备, 表, 传感器地址> 排序，再把"地址连续"的点合并成读块：
  * 一个读块 = 一次 Modbus 读请求。比如开关量板的 5 个线圈合成一次"读线圈 0～4"。
@@ -33,6 +33,7 @@
 #define PT_REC_SIZE     8u      /* 文件里每个点 8 字节 */
 #define PT_BLOCK_MAX    16u     /* 一个读块最多几个点 */
 #define PT_CH_COUNT     2u
+#define PT_MAX_DEVS     8u      /* 每个通道最多几个设备（point_sync 为每个设备记在线状态） */
 
 typedef struct {
     uint8_t  tab;           /* mb_table_t */
@@ -57,7 +58,8 @@ typedef enum {
     PT_ERR_CH,
     PT_ERR_DEV,
     PT_ERR_ADDR,            /* 中控地址超过 499 */
-    PT_ERR_DUP              /* 同一个"表 + 中控地址"出现两次 */
+    PT_ERR_DUP,             /* 同一个"表 + 中控地址"出现两次 */
+    PT_ERR_DEVS             /* 某个通道上的设备超过 PT_MAX_DEVS 个 */
 } pt_err_t;
 
 typedef struct {

@@ -86,6 +86,21 @@ pt_err_t point_table_parse(point_table_t *t, const uint8_t *buf, uint32_t len, u
         t->pts[j] = p;
     }
     t->n = n;
+
+    /* 每个通道的设备数：排好序后同一通道、同一设备的点挨在一起，数"设备变了"几次就行 */
+    for (uint8_t ch = 1; ch <= PT_CH_COUNT; ch++) {
+        uint16_t devs = 0;
+        int prev = -1;
+        for (uint16_t i = 0; i < n; i++) {
+            if (t->pts[i].ch != ch || t->pts[i].dev == prev)
+                continue;
+            prev = t->pts[i].dev;
+            if (++devs > PT_MAX_DEVS) {
+                *bad = 0;
+                return PT_ERR_DEVS;
+            }
+        }
+    }
     build_blocks(t);
     return PT_OK;
 }
@@ -117,6 +132,6 @@ int point_table_find(const point_table_t *t, mb_table_t tab, uint16_t gw_addr)
 const char *pt_err_name(pt_err_t e)
 {
     static const char *const k[] = { "ok", "bad length", "too many points", "bad table",
-                                     "bad channel", "bad device address", "gw address > 499", "duplicate" };
+                                     "bad channel", "bad device address", "gw address > 499", "duplicate", "too many devices on a channel" };
     return ((unsigned)e < sizeof(k) / sizeof(k[0])) ? k[e] : "?";
 }

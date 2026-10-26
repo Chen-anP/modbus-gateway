@@ -5,7 +5,8 @@
  * 按功能码和长度字段算出整帧多长，收够就是一帧；两个字节间隔超过 50 ms 丢弃半帧
  * （USB 包之间的间隔比 RS485 的字节间隔大得多，所以比下行的 5 ms 宽松）。
  *
- * 第 4 步只有系统区（sys_regs.c）；第 5 步起是整个寄存器空间（reg_space.c：点表映射区 + 系统区）。
+ * 第 4 步只有系统区（sys_regs.c）；第 5 步起是整个寄存器空间（reg_space.c：点表映射区 + 系统区）；
+ * 第 6 步加上 0x15 文件记录（gw_file_record → table_loader），收齐合法的点表后在回应发出去之后换上。
  * mb_slave_handle() 整个包在寄存器空间的锁里：读写回调访问的数据 ch 任务也在改。锁里没有收发，很快。
  *
  * SPDX-License-Identifier: MIT
@@ -93,6 +94,7 @@ static void up_link_task(void *arg)
                 handle_frame(f.buf, f.len);
                 mb_framer_reset(&f);
                 run_pending_cmd();
+                gw_apply_table();                   /* 刚收齐一张合法的新点表的话，在这里换上 */
             }
             d += used;
             n = (uint16_t)(n - used);
@@ -119,6 +121,7 @@ void up_link_start(void)
 
     gw_data_init();                                 /* 已经由 poll_start 做过的话，这里什么都不做 */
     reg_space_ops(gw_rs(), &s_ops);
+    s_ops.file_record = gw_file_record;             /* 0x15：点表下发 */
     usb_ok = port_usb_init();                       /* 不能直接写在 configASSERT() 里：断言关掉时整句会被删掉 */
     configASSERT(usb_ok == 0);
     (void)usb_ok;

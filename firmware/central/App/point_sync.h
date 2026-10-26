@@ -23,7 +23,7 @@
 #include "point_table.h"
 #include "reg_space.h"
 
-#define PS_MAX_DEVS     8u      /* 一个通道上最多几个设备 */
+#define PS_MAX_DEVS     PT_MAX_DEVS     /* 一个通道上最多几个设备（点表解析时已经检查过） */
 
 typedef struct {
     uint8_t      addr;

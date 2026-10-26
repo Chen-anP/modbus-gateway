@@ -49,6 +49,16 @@ gcc %CF% -I %APP% -I tests %APP%/mb_rtu.c %APP%/mb_master.c %APP%/dev_health.c %
 if exist tests\out\test_point_sync.exe tests\out\test_point_sync.exe || set FAIL=1
 
 echo.
+echo ===== 9. file_rx 文件接收 =====
+gcc %CF% -I %APP% %APP%/crc32.c %APP%/file_rx.c tests/test_file_rx.c -o tests/out/test_file_rx.exe || set FAIL=1
+if exist tests\out\test_file_rx.exe tests\out\test_file_rx.exe || set FAIL=1
+
+echo.
+echo ===== 10. table_loader 点表下发 =====
+gcc %CF% -I %APP% %APP%/mb_rtu.c %APP%/crc32.c %APP%/file_rx.c %APP%/point_table.c %APP%/default_points.c %APP%/sys_regs.c %APP%/reg_space.c %APP%/table_loader.c tests/test_table_loader.c -o tests/out/test_table_loader.exe || set FAIL=1
+if exist tests\out\test_table_loader.exe tests\out\test_table_loader.exe || set FAIL=1
+
+echo.
 if %FAIL%==0 (echo 全部通过) else (echo 有失败，往上翻看 FAIL 那一行)
 del /q tests\out\*.exe >nul 2>&1
 pause

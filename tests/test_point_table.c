@@ -104,6 +104,16 @@ int main(void)
         CHECK(point_table_find(&t, MB_TAB_INPUT, 20) >= 0 && t.pts[point_table_find(&t, MB_TAB_INPUT, 20)].dev == 3);
     }
 
+    /* 8. 一个通道最多 8 个设备：8 个可以，9 个拒绝；两个通道各 8 个也可以 */
+    {
+        pt_point_t p[16];
+        for (uint16_t i = 0; i < 16; i++) { pt_point_t q = P(MB_TAB_COIL, (uint8_t)(1 + i / 8), (uint8_t)(1 + i % 8), i, 0); p[i] = q; }
+        CHECK(parse(p, 16, &bad) == PT_OK);
+        p[8].ch = 1;    /* 第 9 个设备挪到 ch1 */
+        p[8].dev = 9;
+        CHECK(parse(p, 16, &bad) == PT_ERR_DEVS);
+    }
+
     CHECK(strcmp(pt_err_name(PT_ERR_DUP), "duplicate") == 0);
 
     printf("point_table: %d passed, %d failed\n", g_pass, g_fail);

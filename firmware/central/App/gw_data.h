@@ -1,8 +1,13 @@
 /*
- * gw_data.h - 中控的共享数据：点表、寄存器空间、系统区，以及保护它们的互斥锁
+ * gw_data.h - 中控的共享数据：点表、寄存器空间、系统区、点表下发，以及保护它们的锁
  *
- * up 任务（上位机读写）和 ch1 / ch2 任务（同步传感器）都要访问寄存器空间，
+ * up 任务（上位机读写、下发点表）和 ch1 / ch2 任务（同步传感器）都要访问这些数据，
  * 这里集中创建，大家通过下面的函数拿指针。
+ *
+ * 两种锁：
+ *   gw_lock / gw_unlock        寄存器空间的锁，持有时间只有微秒级，锁里不做收发
+ *   gw_round_begin / end       每个通道一把"轮锁"：通道任务每一轮都持有它（轮里有串口收发）；
+ *                              换点表时 up 任务把两把轮锁都拿到，说明两个通道都停在两轮之间，才能安全换表
  *
  * SPDX-License-Identifier: MIT
  * Copyright (c) 2026 陈攀
@@ -10,11 +15,13 @@
 #ifndef GW_DATA_H
 #define GW_DATA_H
 
+#include <stdint.h>
+#include "mb_rtu.h"
 #include "point_table.h"
 #include "reg_space.h"
 #include "sys_regs.h"
 
-/* 创建互斥锁、加载默认点表。可以重复调用（只做一次）。在调度器启动前调用 */
+/* 创建锁、加载默认点表。可以重复调用（只做一次）。在调度器启动前调用 */
 void gw_data_init(void);
 
 const point_table_t *gw_points(void);
@@ -24,5 +31,15 @@ sys_regs_t          *gw_sys(void);
 /* 寄存器空间的锁（up 任务包住 mb_slave_handle 时用） */
 void gw_lock(void);
 void gw_unlock(void);
+
+/* 通道任务每一轮的开始和结束。返回点表的版本号：和上一轮不同，说明点表换过了，要重新初始化 */
+uint32_t gw_round_begin(uint8_t ch);
+void     gw_round_end(uint8_t ch);
+
+/* 0x15 回调（在 mb_slave_handle 里、gw_lock 内调用）：交给 table_loader */
+mb_ex_t gw_file_record(void *ctx, uint16_t file_no, uint16_t record_no, const uint8_t *data, uint16_t len);
+
+/* up 任务回完一帧后调用：如果收到了一张合法的新表，等两个通道停下来，换上。没有新表立刻返回 */
+void gw_apply_table(void);
 
 #endif /* GW_DATA_H */

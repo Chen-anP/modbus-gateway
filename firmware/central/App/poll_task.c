@@ -56,6 +56,7 @@ static void io_delay_ms(uint32_t ms)
 
 typedef struct {
     uint8_t             ch;         /* 1、2 */
+    uint32_t            table_gen;  /* 现在用的是哪个版本的点表 */
     UART_HandleTypeDef *huart;
     port_uart_t         port;
     mb_io_t             io;
@@ -88,17 +89,19 @@ static void poll_task(void *arg)
     }
     mb_master_init(&c->mb, &c->io, RSP_TIMEOUT_MS, RETRIES);
     c->mb.echo = MB_ECHO_NONE;      /* 中控的收发器不回显（实测见 docs/debug-log.md） */
-    if (point_sync_init(&c->ps, c->ch, &c->mb, gw_rs(), gw_points()) != 0) {
-        LOGE(c->io.name, "too many devices in point table");
-        vTaskDelete(NULL);
-        return;
-    }
-    c->ready = 1;
-    LOGI(c->io.name, "sync start: %u device(s)", (unsigned)c->ps.ndev);
 
     next_report = io_now_ms() + REPORT_MS;
     for (;;) {
+        uint32_t gen = gw_round_begin(c->ch);   /* 一轮开始：换表的时候会在这里等 */
+
+        if (gen != c->table_gen) {              /* 点表换过了（开机第一轮也算）：按新表重新找设备 */
+            c->table_gen = gen;
+            point_sync_init(&c->ps, c->ch, &c->mb, gw_rs(), gw_points());   /* 设备数在解析点表时检查过 */
+            c->ready = 1;
+            LOGI(c->io.name, "sync start: %u device(s), table #%lu", (unsigned)c->ps.ndev, (unsigned long)gen);
+        }
         point_sync_step(&c->ps);
+        gw_round_end(c->ch);
 
         if ((int32_t)(io_now_ms() - next_report) >= 0) {
             next_report += REPORT_MS;
