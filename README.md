@@ -123,7 +123,7 @@ python gw_tool.py COM9 test-hang                             # 故障测试：�
 | 升级时拔 USB | 旧 App 完好，重新升级成功 |
 | FreeRTOS 堆（32 KB） | 剩余 13952 字节，历史最低 13320 字节 |
 
-完整的测试步骤和数据见 `docs/` 下的测试报告（补充中）。调试中遇到的问题和排查过程见 [`docs/debug-log.md`](docs/debug-log.md)。
+完整的测试步骤和数据见 `docs/` 下的测试报告（补充中）。各部分为什么这样设计见 [`docs/design.md`](docs/design.md)，调试中遇到的问题和排查过程见 [`docs/debug-log.md`](docs/debug-log.md)。
 
 ## 目录
 
@@ -167,7 +167,7 @@ tests/                  PC 端单元测试
   stubs/                  FreeRTOS / HAL 的替身头文件
   fake_bus.h              模拟 RS485 总线和从机（假时间）
   fake_flash.h            模拟 Flash（扇区擦除、16 字节写、不能写两次、模拟断电）
-docs/                   调试记录 debug-log.md；设计文档、测试报告（补充中）
+docs/                   设计文档 design.md、调试记录 debug-log.md；测试报告（补充中）
 ```
 
 ## 编译和下载
