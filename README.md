@@ -4,12 +4,6 @@
 
 支持在线下发点表（掉电保存）、通过 USB 升级中控自己（带 Bootloader）、通过中控转发升级下游传感器，并有任务看门狗和"启动就死机"保护。
 
-## 来源说明
-
-- 功能需求参考了百问网课程中"中控"的功能。本仓库的设计和代码为重新编写，不使用课程的中控代码和 libmodbus。
-- 下游传感器节点（STM32F030）运行**课程提供的传感器固件**，本仓库不包含它的代码。中控按这份固件的私有升级协议转发固件，并在中控一侧补充了检查（见下文"转发升级传感器"）。
-- 第三方组件：STM32CubeH5 HAL、FreeRTOS、TinyUSB 0.20.0，均保持各自原有许可。
-
 ## 功能
 
 | 功能 | 说明 |
@@ -123,7 +117,7 @@ python gw_tool.py COM9 test-hang                             # 故障测试：�
 | 升级时拔 USB | 旧 App 完好，重新升级成功 |
 | FreeRTOS 堆（32 KB） | 剩余 13952 字节，历史最低 13320 字节 |
 
-完整的测试步骤和数据见 `docs/` 下的测试报告（补充中）。各部分为什么这样设计见 [`docs/design.md`](docs/design.md)，调试中遇到的问题和排查过程见 [`docs/debug-log.md`](docs/debug-log.md)。
+完整的测试方法和数据见 [`docs/test-report.md`](docs/test-report.md)。各部分为什么这样设计见 [`docs/design.md`](docs/design.md)，调试中遇到的问题和排查过程见 [`docs/debug-log.md`](docs/debug-log.md)。
 
 ## 目录
 
@@ -167,7 +161,7 @@ tests/                  PC 端单元测试
   stubs/                  FreeRTOS / HAL 的替身头文件
   fake_bus.h              模拟 RS485 总线和从机（假时间）
   fake_flash.h            模拟 Flash（扇区擦除、16 字节写、不能写两次、模拟断电）
-docs/                   设计文档 design.md、调试记录 debug-log.md；测试报告（补充中）
+docs/                   设计文档 design.md、测试报告 test-report.md、调试记录 debug-log.md
 ```
 
 ## 编译和下载
@@ -211,12 +205,6 @@ gcc -std=c99 -Wall -Wextra -I firmware/central/App firmware/central/App/mb_rtu.c
 | `test_reg_space.c` | 34 | `test_wd.c` | 31 |
 | `test_point_sync.c` | 29 | `test_fwd.c` | 35（模拟课程传感器 Bootloader） |
 | `test_file_rx.c` | 20 | | |
-
-## 已知问题
-
-- **温湿度板（ch2）未接通**：中控 ch2 发出请求，收不到任何回复。还没分清是温湿度板还是中控 ch2 的问题，排查中。ch2 的代码和 ch1 相同，在 PC 测试里覆盖。
-- **开机第一帧偶尔超时**：上电或重启后 ch1 的前几次请求偶尔超时，之后正常。怀疑是复位时 RS485 线上的毛刺，未确认。
-- **转发时放宽了字节间隔**：课程传感器回应较长的帧时中途会停顿，转发期间中控把字节间隔从 5 ms 放宽到 30 ms（见调试记录第 11 条）。
 
 ## 许可
 
